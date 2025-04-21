@@ -25,7 +25,7 @@ export default function AddEmployeePage() {
     tags: ''
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [errors, setErrors] = useState({});
+ const [errors, setErrors] = useState<Record<string, string>>({});
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -35,38 +35,39 @@ export default function AddEmployeePage() {
     });
   };
 
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.name.trim()) {
-      newErrors.name = 'El nombre es obligatorio';
-    }
-    
-    if (!formData.email.trim()) {
-      newErrors.email = 'El email es obligatorio';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      newErrors.email = 'El email no es válido';
-    }
-    
-    if (!formData.phone.trim()) {
-      newErrors.phone = 'El teléfono es obligatorio';
-    }
-    
-    if (!formData.department.trim()) {
-      newErrors.department = 'El departamento es obligatorio';
-    }
-    
-    if (!formData.position.trim()) {
-      newErrors.position = 'El cargo es obligatorio';
-    }
-    
-    if (!formData.joinDate) {
-      newErrors.joinDate = 'La fecha de incorporación es obligatoria';
-    }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
+ const validateForm = () => {
+  const newErrors: Record<string, string> = {};
+  
+  if (!formData.name.trim()) {
+    newErrors.name = 'El nombre es obligatorio';
+  }
+  
+  if (!formData.email.trim()) {
+    newErrors.email = 'El email es obligatorio';
+  } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+    newErrors.email = 'El email no es válido';
+  }
+  
+  if (!formData.phone.trim()) {
+    newErrors.phone = 'El teléfono es obligatorio';
+  }
+  
+  if (!formData.department.trim()) {
+    newErrors.department = 'El departamento es obligatorio';
+  }
+  
+  if (!formData.position.trim()) {
+    newErrors.position = 'El cargo es obligatorio';
+  }
+  
+  if (!formData.joinDate) {
+    newErrors.joinDate = 'La fecha de incorporación es obligatoria';
+  }
+  
+  setErrors(newErrors);
+  return Object.keys(newErrors).length === 0;
+};
+
 
   const handleSubmit = (e) => {
     e.preventDefault();
