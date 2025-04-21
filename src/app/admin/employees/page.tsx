@@ -138,8 +138,10 @@ export default function EmployeesPage() {
   };
 
   const handleAddEmployee = () => {
-    alert('Funcionalidad de añadir empleado - Próximamente');
-  };
+  // En lugar de mostrar una alerta, redirigimos a la página de añadir empleado
+  router.push('/admin/employees/add-employee');
+};
+
 
   const handleEditEmployee = (id) => {
     alert(`Editar empleado con ID: ${id} - Próximamente`);
@@ -180,12 +182,12 @@ export default function EmployeesPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-3xl font-bold text-gray-900">Gestión de Empleados</h1>
-          <button
-            onClick={handleAddEmployee}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-          >
-            Añadir Empleado
-          </button>
+       <button
+  onClick={handleAddEmployee}
+  className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+>
+  Añadir Empleado
+</button>
         </div>
 
         {/* Filtros y búsqueda */}
