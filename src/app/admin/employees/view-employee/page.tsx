@@ -136,9 +136,15 @@ export default function ViewEmployeePage() {
   };
 
   const formatDate = (dateString) => {
-    const options = { year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString('es-ES', options);
-  };
+  const options = { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  } as Intl.DateTimeFormatOptions;
+  
+  return new Date(dateString).toLocaleDateString('es-ES', options);
+};
+
 
   if (loading) {
     return (
