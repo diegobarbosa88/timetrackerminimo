@@ -11,13 +11,15 @@ export default function ViewEmployeePage() {
     department: '',
     position: '',
     startDate: '',
-    status: '',
-    statusClass: '',
-    phone: '',
-    address: '',
-    emergencyContact: '',
-    notes: ''
+    status: 'No disponible',
+    statusClass: 'bg-gray-100 text-gray-800',
+    phone: 'No disponible',
+    address: 'No disponible',
+    emergencyContact: 'No disponible',
+    notes: 'No disponible'
   });
+  const [timeRecords, setTimeRecords] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   // Obtener el ID del empleado de la URL al cargar la página
   useEffect(() => {
@@ -31,74 +33,169 @@ export default function ViewEmployeePage() {
     if (id) {
       setEmployeeId(id);
       
-      // Simulación de carga de datos del empleado según el ID
-      // En una aplicación real, esto sería una llamada a una API o base de datos
-      const employeeMap = {
-        'EMP001': {
-          id: 'EMP001',
-          name: 'Carlos Rodríguez',
-          email: 'carlos.rodriguez@magneticplace.com',
-          department: 'Operaciones',
-          position: 'Técnico Senior',
-          startDate: '2023-05-15',
-          status: 'Registrado (08:30)',
-          statusClass: 'bg-green-100 text-green-800',
-          phone: '+34 612 345 678',
-          address: 'Calle Principal 123, Madrid',
-          emergencyContact: 'María Rodríguez - +34 698 765 432',
-          notes: 'Especialista en instalaciones industriales. Certificado en seguridad industrial.'
-        },
-        'EMP002': {
-          id: 'EMP002',
-          name: 'Ana Martínez',
-          email: 'ana.martinez@magneticplace.com',
-          department: 'Administración',
-          position: 'Gerente Administrativa',
-          startDate: '2022-11-10',
-          status: 'Registrada (08:15)',
-          statusClass: 'bg-green-100 text-green-800',
-          phone: '+34 623 456 789',
-          address: 'Avenida Central 45, Barcelona',
-          emergencyContact: 'Juan Martínez - +34 687 654 321',
-          notes: 'Responsable de contabilidad y recursos humanos. Máster en administración de empresas.'
-        },
-        'EMP003': {
-          id: 'EMP003',
-          name: 'Miguel Sánchez',
-          email: 'miguel.sanchez@magneticplace.com',
-          department: 'Ventas',
-          position: 'Representante de Ventas',
-          startDate: '2024-01-20',
-          status: 'No registrado',
-          statusClass: 'bg-red-100 text-red-800',
-          phone: '+34 634 567 890',
-          address: 'Plaza Mayor 8, Valencia',
-          emergencyContact: 'Laura Sánchez - +34 676 543 210',
-          notes: 'Especializado en desarrollo de nuevos clientes. Experiencia previa en el sector industrial.'
+      // Intentar obtener el empleado seleccionado de localStorage
+      try {
+        const selectedEmployeeJson = localStorage.getItem('selected_employee');
+        if (selectedEmployeeJson) {
+          const selectedEmployee = JSON.parse(selectedEmployeeJson);
+          
+          // Verificar que el ID coincida
+          if (selectedEmployee && selectedEmployee.id === id) {
+            // Crear objeto de datos completo con la información disponible
+            const employeeInfo = {
+              ...employeeData,
+              ...selectedEmployee,
+              status: selectedEmployee.status || 'Activo',
+              statusClass: 'bg-green-100 text-green-800',
+            };
+            
+            setEmployeeData(employeeInfo);
+          } else {
+            // Si el ID no coincide, buscar en la lista completa de empleados
+            loadEmployeeFromList(id);
+          }
+        } else {
+          // Si no hay empleado seleccionado, buscar en la lista completa
+          loadEmployeeFromList(id);
         }
-      };
-      
-      if (employeeMap[id]) {
-        setEmployeeData(employeeMap[id]);
+      } catch (error) {
+        console.error('Error al cargar datos del empleado:', error);
+        loadEmployeeFromList(id);
       }
+      
+      // Cargar registros de tiempo simulados para este empleado
+      loadTimeRecords(id);
     }
+    
+    setLoading(false);
   }, []);
 
-  // Datos de ejemplo para estadísticas y registros
-  const employeeStats = {
-    hoursThisMonth: '168h 30m',
-    daysWorked: 21,
-    punctuality: '95%',
-    extraHours: '12h 45m'
+  // Función para cargar empleado desde la lista completa
+  const loadEmployeeFromList = (employeeId) => {
+    try {
+      const storedEmployees = localStorage.getItem('timetracker_employees');
+      if (storedEmployees) {
+        const employees = JSON.parse(storedEmployees);
+        const employee = employees.find(emp => emp.id === employeeId);
+        
+        if (employee) {
+          const employeeInfo = {
+            ...employeeData,
+            ...employee,
+            status: employee.status || 'Activo',
+            statusClass: 'bg-green-100 text-green-800',
+          };
+          
+          setEmployeeData(employeeInfo);
+        }
+      }
+    } catch (error) {
+      console.error('Error al buscar empleado en la lista:', error);
+    }
   };
 
-  const timeRecords = [
-    { date: '2024-04-20', entry: '08:30', exit: '17:45', total: '9h 15m', status: 'Completado' },
-    { date: '2024-04-19', entry: '08:15', exit: '17:30', total: '9h 15m', status: 'Completado' },
-    { date: '2024-04-18', entry: '08:45', exit: '18:00', total: '9h 15m', status: 'Llegada tarde' },
-    { date: '2024-04-17', entry: '08:30', exit: '17:30', total: '9h 00m', status: 'Completado' },
-    { date: '2024-04-16', entry: '08:30', exit: '17:30', total: '9h 00m', status: 'Completado' }
-  ];
+  // Función para cargar registros de tiempo
+  const loadTimeRecords = (employeeId) => {
+    // En una aplicación real, estos datos vendrían de una API o base de datos
+    // Por ahora, generamos datos de ejemplo para el último mes
+    const records = [];
+    const today = new Date();
+    
+    // Generar registros para los últimos 30 días
+    for (let i = 0; i < 30; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() - i);
+      
+      // Solo incluir días laborables (lunes a viernes)
+      if (date.getDay() > 0 && date.getDay() < 6) {
+        // Generar hora de entrada aleatoria entre 8:00 y 9:00
+        const entryHour = Math.floor(Math.random() * 2) + 8;
+        const entryMinute = Math.floor(Math.random() * 60);
+        const entryTime = `${entryHour.toString().padStart(2, '0')}:${entryMinute.toString().padStart(2, '0')}`;
+        
+        // Generar hora de salida aleatoria entre 17:00 y 18:30
+        const exitHour = Math.floor(Math.random() * 2) + 17;
+        const exitMinute = Math.floor(Math.random() * 60);
+        const exitTime = `${exitHour.toString().padStart(2, '0')}:${exitMinute.toString().padStart(2, '0')}`;
+        
+        // Calcular horas trabajadas
+        const entryMinutes = entryHour * 60 + entryMinute;
+        const exitMinutes = exitHour * 60 + exitMinute;
+        const totalMinutes = exitMinutes - entryMinutes;
+        const totalHours = Math.floor(totalMinutes / 60);
+        const remainingMinutes = totalMinutes % 60;
+        const totalTime = `${totalHours}h ${remainingMinutes}m`;
+        
+        // Determinar estado (llegada tarde si después de las 8:30)
+        const status = entryHour > 8 || (entryHour === 8 && entryMinute > 30) ? 'Llegada tarde' : 'Completado';
+        
+        records.push({
+          date: date.toISOString().split('T')[0],
+          entry: entryTime,
+          exit: exitTime,
+          total: totalTime,
+          status: status
+        });
+      }
+    }
+    
+    // Ordenar registros por fecha (más reciente primero)
+    records.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    setTimeRecords(records);
+  };
+
+  // Calcular estadísticas basadas en los registros de tiempo
+  const calculateStats = () => {
+    if (timeRecords.length === 0) {
+      return {
+        hoursThisMonth: '0h 0m',
+        daysWorked: 0,
+        punctuality: '0%',
+        extraHours: '0h 0m'
+      };
+    }
+    
+    // Total de minutos trabajados
+    let totalMinutes = 0;
+    let lateCount = 0;
+    let extraMinutes = 0;
+    
+    timeRecords.forEach(record => {
+      // Extraer horas y minutos del total
+      const [hours, minutes] = record.total.split('h ');
+      const recordMinutes = parseInt(hours) * 60 + parseInt(minutes.replace('m', ''));
+      
+      totalMinutes += recordMinutes;
+      
+      // Contar llegadas tarde
+      if (record.status === 'Llegada tarde') {
+        lateCount++;
+      }
+      
+      // Calcular horas extra (más de 8 horas)
+      const extraInRecord = Math.max(0, recordMinutes - 480); // 8 horas = 480 minutos
+      extraMinutes += extraInRecord;
+    });
+    
+    // Calcular estadísticas
+    const totalHours = Math.floor(totalMinutes / 60);
+    const remainingMinutes = totalMinutes % 60;
+    
+    const extraHours = Math.floor(extraMinutes / 60);
+    const extraRemainingMinutes = extraMinutes % 60;
+    
+    const punctuality = Math.round(((timeRecords.length - lateCount) / timeRecords.length) * 100);
+    
+    return {
+      hoursThisMonth: `${totalHours}h ${remainingMinutes}m`,
+      daysWorked: timeRecords.length,
+      punctuality: `${punctuality}%`,
+      extraHours: `${extraHours}h ${extraRemainingMinutes}m`
+    };
+  };
+
+  const employeeStats = calculateStats();
 
   const formatDate = (dateString) => {
     // Corregido: Usar tipos literales específicos en lugar de strings genéricas
@@ -109,6 +206,17 @@ export default function ViewEmployeePage() {
     };
     return new Date(dateString).toLocaleDateString('es-ES', options);
   };
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center py-10">
+          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          <p className="mt-2 text-gray-600">Cargando información del empleado...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -210,7 +318,7 @@ export default function ViewEmployeePage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {timeRecords.map((record, index) => (
+              {timeRecords.slice(0, 5).map((record, index) => (
                 <tr key={index}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(record.date)}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.entry}</td>
@@ -228,7 +336,7 @@ export default function ViewEmployeePage() {
         </div>
         <div className="mt-4 text-right">
           <a 
-            href={`/reports?userId=${employeeId}`}
+            href={`/reports?employeeId=${employeeId}`}
             className="text-blue-600 hover:text-blue-900 font-medium"
           >
             Ver todos los registros →

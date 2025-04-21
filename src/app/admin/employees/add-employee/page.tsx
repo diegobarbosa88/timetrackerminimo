@@ -54,13 +54,27 @@ export default function AddEmployeePage() {
       
       // Obtener empleados existentes del localStorage
       let employees = [];
-      try {
-        const storedEmployees = localStorage.getItem('timetracker_employees');
-        if (storedEmployees) {
+      
+      // Intentar obtener empleados existentes
+      const storedEmployees = localStorage.getItem('timetracker_employees');
+      
+      if (storedEmployees) {
+        try {
+          // Intentar parsear los datos existentes
           employees = JSON.parse(storedEmployees);
+          
+          // Verificar que employees sea un array
+          if (!Array.isArray(employees)) {
+            console.error('Los datos almacenados no son un array:', employees);
+            employees = [];
+          }
+        } catch (err) {
+          console.error('Error al parsear empleados del localStorage:', err);
+          employees = [];
         }
-      } catch (err) {
-        console.error('Error al leer empleados del localStorage:', err);
+      } else {
+        // Si no hay datos, inicializar con los empleados de muestra
+        employees = getSampleEmployees();
       }
       
       // Añadir nuevo empleado
@@ -77,6 +91,57 @@ export default function AddEmployeePage() {
       setError('Ocurrió un error al guardar el empleado');
       setIsSubmitting(false);
     }
+  };
+
+  // Función para obtener empleados de muestra
+  const getSampleEmployees = () => {
+    return [
+      {
+        id: 'EMP001',
+        name: 'Carlos Rodríguez',
+        email: 'carlos@example.com',
+        department: 'Operaciones',
+        position: 'Gerente de Operaciones',
+        startDate: '2023-01-15',
+        status: 'active'
+      },
+      {
+        id: 'EMP002',
+        name: 'Ana Martínez',
+        email: 'ana@example.com',
+        department: 'Administración',
+        position: 'Contadora',
+        startDate: '2023-02-10',
+        status: 'active'
+      },
+      {
+        id: 'EMP003',
+        name: 'Miguel Sánchez',
+        email: 'miguel@example.com',
+        department: 'Ventas',
+        position: 'Representante de Ventas',
+        startDate: '2023-03-05',
+        status: 'active'
+      },
+      {
+        id: 'EMP004',
+        name: 'Laura Gómez',
+        email: 'laura@example.com',
+        department: 'Tecnología',
+        position: 'Desarrolladora Frontend',
+        startDate: '2023-04-12',
+        status: 'active'
+      },
+      {
+        id: 'EMP005',
+        name: 'Javier López',
+        email: 'javier@example.com',
+        department: 'Recursos Humanos',
+        position: 'Coordinador de RRHH',
+        startDate: '2023-05-20',
+        status: 'active'
+      }
+    ];
   };
 
   return (

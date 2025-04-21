@@ -15,10 +15,37 @@ function AdminEmployeesPage() {
       try {
         // Obtener empleados del localStorage
         const storedEmployees = localStorage.getItem('timetracker_employees');
-        const employeesList = storedEmployees ? JSON.parse(storedEmployees) : getSampleEmployees();
-        setEmployees(employeesList);
+        
+        if (storedEmployees) {
+          try {
+            const parsedEmployees = JSON.parse(storedEmployees);
+            // Verificar que sea un array
+            if (Array.isArray(parsedEmployees)) {
+              setEmployees(parsedEmployees);
+            } else {
+              console.error('Los datos almacenados no son un array:', parsedEmployees);
+              const sampleData = getSampleEmployees();
+              setEmployees(sampleData);
+              // Corregir los datos en localStorage
+              localStorage.setItem('timetracker_employees', JSON.stringify(sampleData));
+            }
+          } catch (parseError) {
+            console.error('Error al parsear empleados del localStorage:', parseError);
+            const sampleData = getSampleEmployees();
+            setEmployees(sampleData);
+            // Corregir los datos en localStorage
+            localStorage.setItem('timetracker_employees', JSON.stringify(sampleData));
+          }
+        } else {
+          // Si no hay datos, inicializar con los empleados de muestra
+          const sampleData = getSampleEmployees();
+          setEmployees(sampleData);
+          // Guardar los datos de muestra en localStorage
+          localStorage.setItem('timetracker_employees', JSON.stringify(sampleData));
+        }
       } catch (error) {
         console.error('Error al cargar empleados:', error);
+        setEmployees(getSampleEmployees());
       } finally {
         setLoading(false);
       }
@@ -78,6 +105,27 @@ function AdminEmployeesPage() {
     ];
   };
 
+  // Función para eliminar un empleado
+  const handleDeleteEmployee = (employeeId) => {
+    if (confirm('¿Estás seguro de que deseas eliminar este empleado? Esta acción no se puede deshacer.')) {
+      try {
+        // Filtrar el empleado a eliminar
+        const updatedEmployees = employees.filter(emp => emp.id !== employeeId);
+        
+        // Actualizar el estado
+        setEmployees(updatedEmployees);
+        
+        // Actualizar localStorage
+        localStorage.setItem('timetracker_employees', JSON.stringify(updatedEmployees));
+        
+        alert('Empleado eliminado correctamente');
+      } catch (error) {
+        console.error('Error al eliminar empleado:', error);
+        alert('Ocurrió un error al eliminar el empleado');
+      }
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
@@ -135,8 +183,34 @@ function AdminEmployeesPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <a href={`/admin/employees/view-employee?id=${employee.id}`} className="text-blue-600 hover:text-blue-900 mr-3">Ver</a>
-                        <a href={`/admin/employees/edit-employee?id=${employee.id}`} className="text-indigo-600 hover:text-indigo-900 mr-3">Editar</a>
+                        <button 
+                          onClick={() => {
+                            // Guardar el empleado seleccionado en localStorage para la vista detallada
+                            localStorage.setItem('selected_employee', JSON.stringify(employee));
+                            // Navegar a la página de detalles
+                            window.location.href = `/admin/employees/view-employee?id=${employee.id}`;
+                          }} 
+                          className="text-blue-600 hover:text-blue-900 mr-3"
+                        >
+                          Ver
+                        </button>
+                        <button 
+                          onClick={() => {
+                            // Guardar el empleado seleccionado en localStorage para la edición
+                            localStorage.setItem('selected_employee', JSON.stringify(employee));
+                            // Navegar a la página de edición
+                            window.location.href = `/admin/employees/edit-employee?id=${employee.id}`;
+                          }} 
+                          className="text-indigo-600 hover:text-indigo-900 mr-3"
+                        >
+                          Editar
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteEmployee(employee.id)} 
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Eliminar
+                        </button>
                       </td>
                     </tr>
                   ))}
