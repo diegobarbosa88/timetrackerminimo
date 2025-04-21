@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
@@ -27,19 +27,46 @@ interface EmployeeRecord {
   avgDailyRemainingMinutes?: number;
 }
 
+interface Employee {
+  id: string;
+  name: string;
+  department: string;
+  email?: string;
+  position?: string;
+  startDate?: string;
+  status?: string;
+}
+
 // Componente de informes
 export default function ReportsPage() {
   const [reportType, setReportType] = useState('daily');
-  const [dateRange, setDateRange] = useState('week');
+  const [dateRange, setDateRange] = useState('month');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [reportGenerated, setReportGenerated] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState('');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [customDateRange, setCustomDateRange] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   
   // Referencias para exportación
   const reportRef = React.useRef(null);
+
+  // Cargar empleados al montar el componente
+  useEffect(() => {
+    const loadedEmployees = getEmployeesData();
+    setEmployees(loadedEmployees);
+    
+    // Establecer fechas por defecto para el rango personalizado
+    const today = new Date();
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    
+    setEndDate(today.toISOString().split('T')[0]);
+    setStartDate(firstDayOfMonth.toISOString().split('T')[0]);
+  }, []);
 
   // Función para generar el informe
   const generateReport = () => {
@@ -48,7 +75,7 @@ export default function ReportsPage() {
     // Simulamos una llamada a API con un pequeño retraso
     setTimeout(() => {
       // Generamos datos de informe basados en los filtros seleccionados
-      const data = generateReportData(reportType, dateRange, employeeFilter);
+      const data = generateReportData(reportType, dateRange, employeeFilter, customDateRange, startDate, endDate);
       setReportData(data);
       setReportGenerated(true);
       setIsGenerating(false);
@@ -56,9 +83,9 @@ export default function ReportsPage() {
   };
 
   // Función para generar datos de informe basados en los filtros
-  const generateReportData = (type: string, range: string, employee: string) => {
+  const generateReportData = (type: string, range: string, employee: string, isCustomRange: boolean, customStartDate: string, customEndDate: string) => {
     // Obtener datos de empleados del localStorage o usar datos de muestra
-    const employees = getEmployeesData();
+    const employeesList = getEmployeesData();
     
     // Obtener registros de tiempo del localStorage o usar datos de muestra
     const timeRecords = getTimeRecordsData();
@@ -66,26 +93,39 @@ export default function ReportsPage() {
     // Filtramos los registros de tiempo según el rango de fechas
     const now = new Date();
     let startDate = new Date();
+    let endDate = new Date(now);
     
-    switch(range) {
-      case 'week':
-        startDate.setDate(now.getDate() - 7);
-        break;
-      case 'month':
-        startDate.setMonth(now.getMonth() - 1);
-        break;
-      case 'quarter':
-        startDate.setMonth(now.getMonth() - 3);
-        break;
-      case 'year':
-        startDate.setFullYear(now.getFullYear() - 1);
-        break;
+    if (isCustomRange && customStartDate && customEndDate) {
+      startDate = new Date(customStartDate);
+      endDate = new Date(customEndDate);
+      // Ajustar endDate para incluir todo el día
+      endDate.setHours(23, 59, 59, 999);
+    } else {
+      switch(range) {
+        case 'week':
+          startDate.setDate(now.getDate() - 7);
+          break;
+        case 'month':
+          startDate.setMonth(now.getMonth() - 1);
+          break;
+        case 'quarter':
+          startDate.setMonth(now.getMonth() - 3);
+          break;
+        case 'year':
+          startDate.setFullYear(now.getFullYear() - 1);
+          break;
+        case 'current_month':
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+          endDate.setHours(23, 59, 59, 999);
+          break;
+      }
     }
     
     // Filtramos por empleado si es necesario
     const filteredRecords = timeRecords.filter(record => {
       const recordDate = new Date(record.date);
-      const matchesDate = recordDate >= startDate && recordDate <= now;
+      const matchesDate = recordDate >= startDate && recordDate <= endDate;
       const matchesEmployee = employee === 'all' || record.userId === employee;
       return matchesDate && matchesEmployee;
     });
@@ -96,7 +136,7 @@ export default function ReportsPage() {
       const employeeRecords: Record<string, EmployeeRecord> = {};
       
       // Inicializar estructura para cada empleado
-      employees
+      employeesList
         .filter(emp => employee === 'all' || emp.id === employee)
         .forEach(emp => {
           employeeRecords[emp.id] = {
@@ -143,8 +183,10 @@ export default function ReportsPage() {
       
       return {
         type,
-        range,
+        range: isCustomRange ? 'custom' : range,
         employee,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
         generatedAt: new Date().toISOString(),
         data: Object.values(employeeRecords)
       };
@@ -160,11 +202,11 @@ export default function ReportsPage() {
         employeeRecords[record.userId].push(record);
       });
       
-      const reportData = employees
+      const reportData = employeesList
         .filter(emp => employee === 'all' || emp.id === employee)
         .map(emp => {
           const records = employeeRecords[emp.id] || [];
-          const totalDays = getWorkingDaysInRange(startDate, now);
+          const totalDays = getWorkingDaysInRange(startDate, endDate);
           const workedDays = new Set(records.map(r => r.date)).size;
           const attendanceRate = totalDays > 0 ? (workedDays / totalDays) * 100 : 0;
           
@@ -238,8 +280,10 @@ export default function ReportsPage() {
       
       return {
         type,
-        range,
+        range: isCustomRange ? 'custom' : range,
         employee,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
         generatedAt: new Date().toISOString(),
         data: reportData
       };
@@ -251,7 +295,10 @@ export default function ReportsPage() {
     try {
       const storedEmployees = localStorage.getItem('timetracker_employees');
       if (storedEmployees) {
-        return JSON.parse(storedEmployees);
+        const parsedEmployees = JSON.parse(storedEmployees);
+        if (Array.isArray(parsedEmployees) && parsedEmployees.length > 0) {
+          return parsedEmployees;
+        }
       }
     } catch (error) {
       console.error('Error al obtener empleados:', error);
@@ -285,7 +332,7 @@ export default function ReportsPage() {
   // Función para generar datos de muestra de registros de tiempo
   const generateSampleTimeRecords = () => {
     const records = [];
-    const employeeIds = ['EMP001', 'EMP002', 'EMP003', 'EMP004', 'EMP005'];
+    const employeeIds = employees.map(emp => emp.id);
     const clients = ['Cliente A', 'Cliente B', 'Cliente C', 'Cliente D'];
     
     // Generar registros para el último mes
@@ -487,7 +534,7 @@ export default function ReportsPage() {
         const ws = XLSX.utils.aoa_to_sheet(excelData);
         
         // Añadimos la hoja al libro
-        XLSX.utils.book_append_sheet(wb, ws, 'Informe Diario');
+        XLSX.utils.book_append_sheet(wb, ws, 'Informe');
         
         // Guardamos el archivo
         XLSX.writeFile(wb, `${reportTitle.replace(/\s+/g, '_')}.xlsx`);
@@ -600,11 +647,21 @@ export default function ReportsPage() {
       reportType === 'hours' ? 'Informe de Horas Trabajadas' :
       'Informe de Rendimiento';
     
-    const rangeText = 
-      dateRange === 'week' ? 'Esta Semana' :
-      dateRange === 'month' ? 'Este Mes' :
-      dateRange === 'quarter' ? 'Este Trimestre' :
-      'Este Año';
+    let rangeText = '';
+    
+    if (customDateRange) {
+      const formattedStartDate = new Date(startDate).toLocaleDateString('es-ES');
+      const formattedEndDate = new Date(endDate).toLocaleDateString('es-ES');
+      rangeText = `${formattedStartDate} - ${formattedEndDate}`;
+    } else {
+      rangeText = 
+        dateRange === 'week' ? 'Esta Semana' :
+        dateRange === 'month' ? 'Este Mes' :
+        dateRange === 'quarter' ? 'Este Trimestre' :
+        dateRange === 'year' ? 'Este Año' :
+        dateRange === 'current_month' ? 'Mes Actual' :
+        'Rango Personalizado';
+    }
     
     return `${typeText} - ${rangeText}`;
   };
@@ -651,7 +708,7 @@ export default function ReportsPage() {
       
       {/* Filtros de informes */}
       <div className="bg-white shadow-md rounded-lg p-6 mb-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Informe</label>
             <select
@@ -670,15 +727,24 @@ export default function ReportsPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Rango de Fechas</label>
             <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
+              value={customDateRange ? 'custom' : dateRange}
+              onChange={(e) => {
+                if (e.target.value === 'custom') {
+                  setCustomDateRange(true);
+                } else {
+                  setCustomDateRange(false);
+                  setDateRange(e.target.value);
+                }
+              }}
               className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               disabled={isGenerating}
             >
               <option value="week">Esta Semana</option>
               <option value="month">Este Mes</option>
+              <option value="current_month">Mes Actual Completo</option>
               <option value="quarter">Este Trimestre</option>
               <option value="year">Este Año</option>
+              <option value="custom">Rango Personalizado</option>
             </select>
           </div>
           
@@ -691,14 +757,38 @@ export default function ReportsPage() {
               disabled={isGenerating}
             >
               <option value="all">Todos los Empleados</option>
-              <option value="EMP001">Carlos Rodríguez</option>
-              <option value="EMP002">Ana Martínez</option>
-              <option value="EMP003">Miguel Sánchez</option>
-              <option value="EMP004">Laura Gómez</option>
-              <option value="EMP005">Javier López</option>
+              {employees.map(employee => (
+                <option key={employee.id} value={employee.id}>{employee.name}</option>
+              ))}
             </select>
           </div>
         </div>
+        
+        {/* Selector de rango de fechas personalizado */}
+        {customDateRange && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Inicio</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                disabled={isGenerating}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Fecha de Fin</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                disabled={isGenerating}
+              />
+            </div>
+          </div>
+        )}
         
         <div className="mt-6">
           <button
@@ -735,10 +825,13 @@ export default function ReportsPage() {
                reportType === 'attendance' ? 'Informe de Asistencia' :
                reportType === 'hours' ? 'Informe de Horas Trabajadas' :
                'Informe de Rendimiento'} - 
-              {dateRange === 'week' ? ' Esta Semana' :
-               dateRange === 'month' ? ' Este Mes' :
-               dateRange === 'quarter' ? ' Este Trimestre' :
-               ' Este Año'}
+              {customDateRange 
+                ? ` ${new Date(reportData.startDate).toLocaleDateString('es-ES')} - ${new Date(reportData.endDate).toLocaleDateString('es-ES')}`
+                : dateRange === 'week' ? ' Esta Semana' :
+                  dateRange === 'month' ? ' Este Mes' :
+                  dateRange === 'current_month' ? ' Mes Actual' :
+                  dateRange === 'quarter' ? ' Este Trimestre' :
+                  ' Este Año'}
             </h2>
             <span className="text-sm text-gray-500">
               Generado el: {new Date(reportData.generatedAt).toLocaleString()}
@@ -832,18 +925,21 @@ export default function ReportsPage() {
                       <div className="relative pt-1">
                         <div className="flex mb-2 items-center justify-between">
                           <div>
-                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-blue-600 bg-blue-200">
-                              Asistencia
+                            <span className="text-xs font-semibold inline-block text-blue-600">
+                              Asistencia: {employee.attendance.attendanceRate}%
                             </span>
                           </div>
                           <div className="text-right">
                             <span className="text-xs font-semibold inline-block text-blue-600">
-                              {employee.attendance.attendanceRate}%
+                              {employee.attendance.workedDays}/{employee.attendance.totalDays} días
                             </span>
                           </div>
                         </div>
                         <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-200">
                           <div style={{ width: `${employee.attendance.attendanceRate}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"></div>
+                        </div>
+                        <div className="text-xs text-gray-600">
+                          Llegadas tarde: {employee.attendance.lateDays} días
                         </div>
                       </div>
                     </div>
@@ -855,30 +951,30 @@ export default function ReportsPage() {
           
           {reportType === 'hours' && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-4">Distribución de Horas</h3>
+              <h3 className="text-lg font-medium mb-4">Resumen de Horas Trabajadas</h3>
               <div className="flex flex-wrap justify-around">
                 {reportData.data.map((employee: any) => (
                   <div key={employee.id} className="w-full md:w-1/3 p-2">
                     <div className="bg-white p-4 rounded-lg shadow">
                       <div className="text-center mb-2">{employee.name}</div>
-                      <div className="flex justify-between items-center">
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-blue-600">
-                            {employee.hours.totalHours}h
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-blue-50 p-2 rounded">
+                          <div className="text-xs text-blue-800">Total</div>
+                          <div className="text-lg font-bold text-blue-600">
+                            {employee.hours.totalHours}h {employee.hours.remainingMinutes}m
                           </div>
-                          <div className="text-xs text-gray-500">Total</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-green-600">
-                            {employee.hours.avgDailyHours}h
+                        <div className="bg-green-50 p-2 rounded">
+                          <div className="text-xs text-green-800">Promedio</div>
+                          <div className="text-lg font-bold text-green-600">
+                            {employee.hours.avgDailyHours}h {employee.hours.avgDailyRemainingMinutes}m
                           </div>
-                          <div className="text-xs text-gray-500">Promedio</div>
                         </div>
-                        <div className="text-center">
-                          <div className="text-2xl font-bold text-purple-600">
-                            {employee.hours.overtimeHours}h
+                        <div className="bg-yellow-50 p-2 rounded col-span-2">
+                          <div className="text-xs text-yellow-800">Horas Extra</div>
+                          <div className="text-lg font-bold text-yellow-600">
+                            {employee.hours.overtimeHours}h {employee.hours.overtimeRemainingMinutes}m
                           </div>
-                          <div className="text-xs text-gray-500">Extra</div>
                         </div>
                       </div>
                     </div>
@@ -890,7 +986,7 @@ export default function ReportsPage() {
           
           {reportType === 'performance' && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-4">Rendimiento</h3>
+              <h3 className="text-lg font-medium mb-4">Resumen de Rendimiento</h3>
               <div className="flex flex-wrap justify-around">
                 {reportData.data.map((employee: any) => (
                   <div key={employee.id} className="w-full md:w-1/3 p-2">
@@ -899,21 +995,21 @@ export default function ReportsPage() {
                       <div className="relative pt-1">
                         <div className="flex mb-2 items-center justify-between">
                           <div>
-                            <span className="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-green-600 bg-green-200">
-                              Eficiencia
+                            <span className="text-xs font-semibold inline-block text-purple-600">
+                              Eficiencia: {employee.performance.efficiency}%
                             </span>
                           </div>
                           <div className="text-right">
-                            <span className="text-xs font-semibold inline-block text-green-600">
-                              {employee.performance.efficiency}%
+                            <span className="text-xs font-semibold inline-block text-purple-600">
+                              {employee.performance.tasksCompleted}/{employee.performance.totalTasks} tareas
                             </span>
                           </div>
                         </div>
-                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-green-200">
-                          <div style={{ width: `${employee.performance.efficiency}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-green-500"></div>
+                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-purple-200">
+                          <div style={{ width: `${employee.performance.efficiency}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-purple-500"></div>
                         </div>
-                        <div className="text-center">
-                          <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                        <div className="text-center mt-2">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
                             employee.performance.rating === 'Excelente' ? 'bg-green-100 text-green-800' :
                             employee.performance.rating === 'Bueno' ? 'bg-blue-100 text-blue-800' :
                             employee.performance.rating === 'Regular' ? 'bg-yellow-100 text-yellow-800' :
@@ -930,162 +1026,62 @@ export default function ReportsPage() {
             </div>
           )}
           
-          {/* Tabla de datos del informe (para tipos que no son diarios) */}
-          {reportType !== 'daily' && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empleado</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
-                    {reportType === 'attendance' && (
-                      <>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Días Trabajados</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asistencia</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Llegadas Tarde</th>
-                      </>
-                    )}
-                    {reportType === 'hours' && (
-                      <>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Totales</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promedio Diario</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Extra</th>
-                      </>
-                    )}
-                    {reportType === 'performance' && (
-                      <>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tareas Completadas</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Eficiencia</th>
-                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valoración</th>
-                      </>
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {reportData.data.map((employee: any) => (
-                    <tr key={employee.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{employee.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.department}</td>
-                      {reportType === 'attendance' && (
-                        <>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.workedDays}/{employee.attendance.totalDays}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.attendanceRate}%</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.lateDays}</td>
-                        </>
-                      )}
-                      {reportType === 'hours' && (
-                        <>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.totalHours}h {employee.hours.remainingMinutes}m</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.avgDailyHours}h {employee.hours.avgDailyRemainingMinutes}m</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.overtimeHours}h {employee.hours.overtimeRemainingMinutes}m</td>
-                        </>
-                      )}
-                      {reportType === 'performance' && (
-                        <>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.performance.tasksCompleted}/{employee.performance.totalTasks}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.performance.efficiency}%</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                              employee.performance.rating === 'Excelente' ? 'bg-green-100 text-green-800' :
-                              employee.performance.rating === 'Bueno' ? 'bg-blue-100 text-blue-800' :
-                              employee.performance.rating === 'Regular' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-red-100 text-red-800'
-                            }`}>
-                              {employee.performance.rating}
-                            </span>
-                          </td>
-                        </>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          
-          <div className="mt-6 flex justify-end">
-            <button 
-              className={`btn-secondary mr-2 flex items-center ${isDownloading && downloadFormat === 'pdf' ? 'opacity-75 cursor-not-allowed' : ''}`}
+          {/* Botones de descarga */}
+          <div className="mt-8 flex flex-wrap gap-4">
+            <button
               onClick={() => downloadReport('pdf')}
               disabled={isDownloading}
+              className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center"
             >
               {isDownloading && downloadFormat === 'pdf' ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Descargando...
-                </>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
               ) : (
-                <>
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
-                  </svg>
-                  Exportar PDF
-                </>
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                </svg>
               )}
+              Descargar PDF
             </button>
             
-            <button 
-              className={`btn-secondary mr-2 flex items-center ${isDownloading && downloadFormat === 'excel' ? 'opacity-75 cursor-not-allowed' : ''}`}
+            <button
               onClick={() => downloadReport('excel')}
               disabled={isDownloading}
+              className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center"
             >
               {isDownloading && downloadFormat === 'excel' ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Descargando...
-                </>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
               ) : (
-                <>
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V3zm1 5a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1V8zm0 5a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-1 1H4a1 1 0 01-1-1v-3z" clipRule="evenodd" />
-                  </svg>
-                  Exportar Excel
-                </>
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
               )}
+              Descargar Excel
             </button>
             
-            <button 
-              className={`btn-secondary flex items-center ${isDownloading && downloadFormat === 'csv' ? 'opacity-75 cursor-not-allowed' : ''}`}
+            <button
               onClick={() => downloadReport('csv')}
               disabled={isDownloading}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center"
             >
               {isDownloading && downloadFormat === 'csv' ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Descargando...
-                </>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
               ) : (
-                <>
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v1H3V4zm0 3a1 1 0 011-1h12a1 1 0 011 1v1H3V7zm0 3a1 1 0 011-1h12a1 1 0 011 1v1H3v-1zm0 3a1 1 0 011-1h12a1 1 0 011 1v1H3v-1z" clipRule="evenodd" />
-                  </svg>
-                  Exportar CSV
-                </>
+                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
               )}
+              Descargar CSV
             </button>
           </div>
-        </div>
-      )}
-      
-      {/* Mensaje cuando no hay informe generado */}
-      {!reportGenerated && (
-        <div className="bg-white shadow-md rounded-lg p-6 text-center">
-          <svg className="w-16 h-16 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-          </svg>
-          <h3 className="mt-4 text-lg font-medium text-gray-900">No hay informes generados</h3>
-          <p className="mt-1 text-sm text-gray-500">
-            Selecciona los filtros y haz clic en "Generar Informe" para visualizar los datos.
-          </p>
         </div>
       )}
     </div>

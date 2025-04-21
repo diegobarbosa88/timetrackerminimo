@@ -6,24 +6,6 @@ import { useRouter } from 'next/navigation';
 // Definir el contexto de autenticación
 const AuthContext = createContext(undefined);
 
-// Datos de usuarios para simulación (en una aplicación real, esto vendría de una base de datos)
-const USERS = {
-  admin: {
-    id: 'ADMIN001',
-    name: 'Administrador',
-    email: 'admin@magneticplace.com',
-    password: 'admin123',
-    role: 'admin'
-  },
-  employee: {
-    id: 'EMP001',
-    name: 'Carlos Rodríguez',
-    email: 'carlos.rodriguez@magneticplace.com',
-    password: 'emp123',
-    role: 'employee'
-  }
-};
-
 // Proveedor de autenticación
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -49,35 +31,50 @@ export function AuthProvider({ children }) {
     setLoading(true);
     
     try {
-      // Simulación de verificación de credenciales
+      // Verificación de credenciales
       let isValid = false;
       let userData = null;
       
       if (credentials.type === 'admin' && credentials.email) {
+        // Datos de administrador para simulación (en una aplicación real, esto vendría de una base de datos)
+        const ADMIN_USER = {
+          id: 'ADMIN001',
+          name: 'Administrador',
+          email: 'admin@magneticplace.com',
+          password: 'admin123',
+          role: 'admin'
+        };
+        
         isValid = 
-          credentials.email === USERS.admin.email && 
-          credentials.password === USERS.admin.password;
+          credentials.email === ADMIN_USER.email && 
+          credentials.password === ADMIN_USER.password;
         
         if (isValid) {
           userData = {
-            id: USERS.admin.id,
-            name: USERS.admin.name,
-            email: USERS.admin.email,
+            id: ADMIN_USER.id,
+            name: ADMIN_USER.name,
+            email: ADMIN_USER.email,
             role: 'admin'
           };
         }
       } else if (credentials.type === 'employee' && credentials.employeeId) {
-        isValid = 
-          credentials.employeeId === USERS.employee.id && 
-          credentials.password === USERS.employee.password;
-        
-        if (isValid) {
-          userData = {
-            id: USERS.employee.id,
-            name: USERS.employee.name,
-            email: USERS.employee.email,
-            role: 'employee'
-          };
+        // Buscar el empleado en localStorage
+        const storedEmployees = localStorage.getItem('timetracker_employees');
+        if (storedEmployees) {
+          const employees = JSON.parse(storedEmployees);
+          const employee = employees.find(emp => emp.id === credentials.employeeId);
+          
+          if (employee && employee.password === credentials.password) {
+            isValid = true;
+            userData = {
+              id: employee.id,
+              name: employee.name,
+              email: employee.email,
+              role: 'employee',
+              department: employee.department,
+              position: employee.position
+            };
+          }
         }
       }
       

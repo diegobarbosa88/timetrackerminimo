@@ -26,6 +26,7 @@ interface EmployeeData {
   emergencyContact: string;
   notes: string;
   timeRecords?: TimeRecord[];
+  password?: string; // Añadido para permitir inicio de sesión
 }
 
 interface EmployeeStats {
@@ -53,7 +54,7 @@ export default function ViewEmployeePage() {
   });
   const [timeRecords, setTimeRecords] = useState<TimeRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [isSimulatedData, setIsSimulatedData] = useState<boolean>(true);
+  const [isUserAddedEmployee, setIsUserAddedEmployee] = useState<boolean>(false);
 
   // Obtener el ID del empleado de la URL al cargar la página
   useEffect(() => {
@@ -85,14 +86,22 @@ export default function ViewEmployeePage() {
             
             setEmployeeData(employeeInfo);
             
-            // Verificar si el empleado tiene registros de tiempo reales
-            if (selectedEmployee.timeRecords && selectedEmployee.timeRecords.length > 0) {
-              setTimeRecords(selectedEmployee.timeRecords);
-              setIsSimulatedData(false);
+            // Verificar si es un empleado añadido por el usuario (no uno de los predeterminados)
+            const isUserAdded = !id.startsWith('EMP00');
+            setIsUserAddedEmployee(isUserAdded);
+            
+            // Si es un empleado añadido por el usuario, no mostrar registros simulados
+            if (isUserAdded) {
+              // Si tiene registros reales, mostrarlos
+              if (selectedEmployee.timeRecords && selectedEmployee.timeRecords.length > 0) {
+                setTimeRecords(selectedEmployee.timeRecords);
+              } else {
+                // Si no tiene registros, mostrar array vacío
+                setTimeRecords([]);
+              }
             } else {
-              // Si no tiene registros reales, cargar datos simulados
+              // Para empleados predeterminados, cargar datos simulados
               loadTimeRecords(id);
-              setIsSimulatedData(true);
             }
           } else {
             // Si el ID no coincide, buscar en la lista completa de empleados
@@ -129,34 +138,38 @@ export default function ViewEmployeePage() {
           
           setEmployeeData(employeeInfo);
           
-          // Verificar si el empleado tiene registros de tiempo reales
-          if (employee.timeRecords && employee.timeRecords.length > 0) {
-            setTimeRecords(employee.timeRecords);
-            setIsSimulatedData(false);
+          // Verificar si es un empleado añadido por el usuario (no uno de los predeterminados)
+          const isUserAdded = !employeeId.startsWith('EMP00');
+          setIsUserAddedEmployee(isUserAdded);
+          
+          // Si es un empleado añadido por el usuario, no mostrar registros simulados
+          if (isUserAdded) {
+            // Si tiene registros reales, mostrarlos
+            if (employee.timeRecords && employee.timeRecords.length > 0) {
+              setTimeRecords(employee.timeRecords);
+            } else {
+              // Si no tiene registros, mostrar array vacío
+              setTimeRecords([]);
+            }
           } else {
-            // Si no tiene registros reales, cargar datos simulados
+            // Para empleados predeterminados, cargar datos simulados
             loadTimeRecords(employeeId);
-            setIsSimulatedData(true);
           }
         } else {
-          // Si no se encuentra el empleado, cargar datos simulados
-          loadTimeRecords(employeeId);
-          setIsSimulatedData(true);
+          // Si no se encuentra el empleado, no mostrar registros
+          setTimeRecords([]);
         }
       } else {
-        // Si no hay empleados almacenados, cargar datos simulados
-        loadTimeRecords(employeeId);
-        setIsSimulatedData(true);
+        // Si no hay empleados almacenados, no mostrar registros
+        setTimeRecords([]);
       }
     } catch (error) {
       console.error('Error al buscar empleado en la lista:', error);
-      // En caso de error, cargar datos simulados
-      loadTimeRecords(employeeId);
-      setIsSimulatedData(true);
+      setTimeRecords([]);
     }
   };
 
-  // Función para cargar registros de tiempo simulados
+  // Función para cargar registros de tiempo simulados (solo para empleados predeterminados)
   const loadTimeRecords = (employeeId: string): void => {
     // En una aplicación real, estos datos vendrían de una API o base de datos
     // Por ahora, generamos datos de ejemplo para el último mes
@@ -252,7 +265,9 @@ export default function ViewEmployeePage() {
     const extraHours = Math.floor(extraMinutes / 60);
     const extraRemainingMinutes = extraMinutes % 60;
     
-    const punctuality = Math.round(((timeRecords.length - lateCount) / timeRecords.length) * 100);
+    const punctuality = timeRecords.length > 0 
+      ? Math.round(((timeRecords.length - lateCount) / timeRecords.length) * 100)
+      : 100;
     
     return {
       hoursThisMonth: `${totalHours}h ${remainingMinutes}m`,
@@ -350,7 +365,7 @@ export default function ViewEmployeePage() {
       <div className="bg-white shadow-md rounded-lg p-6 mb-8">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-800">Estadísticas Laborales (Mes Actual)</h3>
-          {isSimulatedData && (
+          {!isUserAddedEmployee && timeRecords.length > 0 && (
             <div className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
               Datos simulados para demostración
             </div>
@@ -380,14 +395,21 @@ export default function ViewEmployeePage() {
       <div className="bg-white shadow-md rounded-lg p-6">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-800">Historial de Registros Recientes</h3>
-          {isSimulatedData && (
+          {!isUserAddedEmployee && timeRecords.length > 0 && (
             <div className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
               Datos simulados para demostración
             </div>
           )}
         </div>
         
-        {isSimulatedData && (
+        {isUserAddedEmployee && timeRecords.length === 0 && (
+          <div className="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6" role="alert">
+            <p className="font-bold">Sin registros</p>
+            <p>Este empleado aún no tiene registros de tiempo en el sistema. Los empleados pueden registrar su tiempo de trabajo iniciando sesión en el sistema.</p>
+          </div>
+        )}
+        
+        {!isUserAddedEmployee && timeRecords.length > 0 && (
           <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6" role="alert">
             <p className="font-bold">Información</p>
             <p>Los registros mostrados son datos simulados para fines de demostración. Este empleado aún no tiene registros de tiempo reales en el sistema.</p>
@@ -430,14 +452,16 @@ export default function ViewEmployeePage() {
             </tbody>
           </table>
         </div>
-        <div className="mt-4 text-right">
-          <a 
-            href={`/reports?employeeId=${employeeId}`}
-            className="text-blue-600 hover:text-blue-900 font-medium"
-          >
-            Ver todos los registros →
-          </a>
-        </div>
+        {timeRecords.length > 0 && (
+          <div className="mt-4 text-right">
+            <a 
+              href={`/reports?employeeId=${employeeId}`}
+              className="text-blue-600 hover:text-blue-900 font-medium"
+            >
+              Ver todos los registros →
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );
