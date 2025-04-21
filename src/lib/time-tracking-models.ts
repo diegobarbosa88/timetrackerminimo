@@ -1,5 +1,8 @@
-// Definición de tipos para TimeTracker
-export type TimeRecord = {
+export interface TimeTrackingModels {
+  // Definición de tipos para TypeScript
+}
+
+export interface TimeRecord {
   id: string;
   userId: string;
   date: string;
@@ -9,4 +12,4 @@ export type TimeRecord = {
   clientTag?: string;
   usedEntryTolerance: boolean;
   usedExitTolerance: boolean;
-};
+}

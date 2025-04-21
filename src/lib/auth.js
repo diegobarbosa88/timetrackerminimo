@@ -1,8 +1,8 @@
 'use client';
 
-// Simulación de autenticación
-export const useAuth = () => {
-  // Simulación de usuario autenticado
+// Simulación de un módulo de autenticación
+export function useAuth() {
+  // Simulación de un usuario autenticado
   const user = {
     id: 'EMP001',
     name: 'Carlos Rodríguez',
@@ -14,13 +14,7 @@ export const useAuth = () => {
     user,
     isAuthenticated: true,
     loading: false,
-    login: (email, password) => {
-      console.log('Login simulado con:', email, password);
-      return Promise.resolve(true);
-    },
-    logout: () => {
-      console.log('Logout simulado');
-      return Promise.resolve(true);
-    }
+    login: () => console.log('Login simulado'),
+    logout: () => console.log('Logout simulado')
   };
-};
+}
