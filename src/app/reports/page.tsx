@@ -319,7 +319,10 @@ export default function ReportsPage() {
     try {
       const storedRecords = localStorage.getItem('timetracker_records');
       if (storedRecords) {
-        return JSON.parse(storedRecords);
+        const parsedRecords = JSON.parse(storedRecords);
+        if (Array.isArray(parsedRecords) && parsedRecords.length > 0) {
+          return parsedRecords;
+        }
       }
     } catch (error) {
       console.error('Error al obtener registros de tiempo:', error);
@@ -332,7 +335,8 @@ export default function ReportsPage() {
   // Función para generar datos de muestra de registros de tiempo
   const generateSampleTimeRecords = () => {
     const records = [];
-    const employeeIds = employees.map(emp => emp.id);
+    // Solo generamos datos simulados para los empleados predefinidos (EMP001-EMP005)
+    const predefinedEmployeeIds = ['EMP001', 'EMP002', 'EMP003', 'EMP004', 'EMP005'];
     const clients = ['Cliente A', 'Cliente B', 'Cliente C', 'Cliente D'];
     
     // Generar registros para el último mes
@@ -346,8 +350,8 @@ export default function ReportsPage() {
       const dayOfWeek = d.getDay();
       if (dayOfWeek === 0 || dayOfWeek === 6) continue;
       
-      // Generar registros para cada empleado
-      employeeIds.forEach(empId => {
+      // Generar registros solo para empleados predefinidos
+      predefinedEmployeeIds.forEach(empId => {
         // 80% de probabilidad de asistencia
         if (Math.random() < 0.8) {
           const date = new Date(d);
@@ -417,7 +421,12 @@ export default function ReportsPage() {
   
   // Función para formatear fecha
   const formatDate = (dateString: string) => {
-    const options: Intl.DateTimeFormatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    const options: Intl.DateTimeFormatOptions = { 
+      weekday: 'long' as const, 
+      year: 'numeric' as const, 
+      month: 'long' as const, 
+      day: 'numeric' as const 
+    };
     return new Date(dateString).toLocaleDateString('es-ES', options);
   };
   
@@ -450,12 +459,7 @@ export default function ReportsPage() {
       const reportTitle = getReportTitle();
       
       // Capturamos el contenido del informe como imagen
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2,
-        logging: false,
-        useCORS: true
-      });
-      
+      const canvas = await html2canvas(reportRef.current);
       const imgData = canvas.toDataURL('image/png');
       
       // Creamos el documento PDF
@@ -465,20 +469,12 @@ export default function ReportsPage() {
         format: 'a4'
       });
       
-      // Añadimos título
-      pdf.setFontSize(16);
-      pdf.text(reportTitle, 15, 15);
+      // Calculamos las dimensiones para ajustar la imagen al PDF
+      const imgWidth = 210; // Ancho de página A4 en mm
+      const imgHeight = canvas.height * imgWidth / canvas.width;
       
-      // Añadimos fecha de generación
-      pdf.setFontSize(10);
-      pdf.text(`Generado el: ${new Date().toLocaleString()}`, 15, 22);
-      
-      // Calculamos dimensiones para mantener la proporción
-      const imgWidth = 180;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      // Añadimos la imagen del informe
-      pdf.addImage(imgData, 'PNG', 15, 30, imgWidth, imgHeight);
+      // Añadimos la imagen al PDF
+      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
       
       // Guardamos el PDF
       pdf.save(`${reportTitle.replace(/\s+/g, '_')}.pdf`);
@@ -488,7 +484,7 @@ export default function ReportsPage() {
     }
   };
   
-  // Función para generar Excel usando xlsx
+  // Función para generar Excel
   const generateExcel = () => {
     try {
       const reportTitle = getReportTitle();
@@ -496,8 +492,8 @@ export default function ReportsPage() {
       if (reportType === 'daily') {
         // Preparamos los datos para Excel - informe diario detallado
         const excelData = [
-          ['Informe: ' + reportTitle],
-          ['Generado el: ' + new Date().toLocaleString()],
+          [reportTitle],
+          [`Generado el: ${new Date().toLocaleString()}`],
           ['']
         ];
         
@@ -862,7 +858,6 @@ export default function ReportsPage() {
                     </div>
                   </div>
                   
-                  {/* Tabla de registros diarios */}
                   {employee.dailyRecords.length > 0 ? (
                     <div className="overflow-x-auto">
                       <table className="min-w-full divide-y divide-gray-200">
@@ -877,152 +872,139 @@ export default function ReportsPage() {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
                           {employee.dailyRecords.map((record, index) => (
-                            <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {formatDate(record.date)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {record.entryTime}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {record.exitTime}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {record.client}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {formatMinutesToHoursMinutes(record.totalWorkTime)}
-                              </td>
+                            <tr key={index}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(record.date)}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.entryTime}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.exitTime}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{record.client}</td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatMinutesToHoursMinutes(record.totalWorkTime)}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
                   ) : (
-                    <div className="text-center py-4 bg-gray-50 rounded">
-                      <p className="text-gray-500">No hay registros para este empleado en el período seleccionado.</p>
+                    <div className="text-center py-8 bg-gray-50 rounded-lg">
+                      <p className="text-gray-500">No hay registros de tiempo para este empleado en el período seleccionado.</p>
                     </div>
-                  )}
-                  
-                  {/* Separador entre empleados */}
-                  {empIndex < reportData.data.length - 1 && (
-                    <hr className="my-8 border-gray-200" />
                   )}
                 </div>
               ))}
             </div>
           )}
           
-          {/* Visualización gráfica para otros tipos de informes */}
+          {/* Informe de asistencia */}
           {reportType === 'attendance' && (
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-4">Resumen de Asistencia</h3>
-              <div className="flex flex-wrap justify-around">
-                {reportData.data.map((employee: any) => (
-                  <div key={employee.id} className="w-full md:w-1/3 p-2">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-center mb-2">{employee.name}</div>
-                      <div className="relative pt-1">
-                        <div className="flex mb-2 items-center justify-between">
-                          <div>
-                            <span className="text-xs font-semibold inline-block text-blue-600">
-                              Asistencia: {employee.attendance.attendanceRate}%
-                            </span>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empleado</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Días Trabajados</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asistencia (%)</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Llegadas Tarde</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.data.map((employee: any, index: number) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{employee.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.department}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{employee.attendance.workedDays}/{employee.attendance.totalDays}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="flex items-center">
+                          <span className="mr-2">{employee.attendance.attendanceRate}%</span>
+                          <div className="w-24 bg-gray-200 rounded-full h-2.5">
+                            <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${employee.attendance.attendanceRate}%` }}></div>
                           </div>
-                          <div className="text-right">
-                            <span className="text-xs font-semibold inline-block text-blue-600">
-                              {employee.attendance.workedDays}/{employee.attendance.totalDays} días
-                            </span>
-                          </div>
                         </div>
-                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-blue-200">
-                          <div style={{ width: `${employee.attendance.attendanceRate}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-blue-500"></div>
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          Llegadas tarde: {employee.attendance.lateDays} días
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{employee.attendance.lateDays}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
           
+          {/* Informe de horas trabajadas */}
           {reportType === 'hours' && (
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-4">Resumen de Horas Trabajadas</h3>
-              <div className="flex flex-wrap justify-around">
-                {reportData.data.map((employee: any) => (
-                  <div key={employee.id} className="w-full md:w-1/3 p-2">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-center mb-2">{employee.name}</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-blue-50 p-2 rounded">
-                          <div className="text-xs text-blue-800">Total</div>
-                          <div className="text-lg font-bold text-blue-600">
-                            {employee.hours.totalHours}h {employee.hours.remainingMinutes}m
-                          </div>
-                        </div>
-                        <div className="bg-green-50 p-2 rounded">
-                          <div className="text-xs text-green-800">Promedio</div>
-                          <div className="text-lg font-bold text-green-600">
-                            {employee.hours.avgDailyHours}h {employee.hours.avgDailyRemainingMinutes}m
-                          </div>
-                        </div>
-                        <div className="bg-yellow-50 p-2 rounded col-span-2">
-                          <div className="text-xs text-yellow-800">Horas Extra</div>
-                          <div className="text-lg font-bold text-yellow-600">
-                            {employee.hours.overtimeHours}h {employee.hours.overtimeRemainingMinutes}m
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empleado</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Totales</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promedio Diario</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Extra</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.data.map((employee: any, index: number) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{employee.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.department}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{employee.hours.totalHours}h {employee.hours.remainingMinutes}m</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{employee.hours.avgDailyHours}h {employee.hours.avgDailyRemainingMinutes}m</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{employee.hours.overtimeHours}h {employee.hours.overtimeRemainingMinutes}m</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
           
+          {/* Informe de rendimiento */}
           {reportType === 'performance' && (
-            <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium mb-4">Resumen de Rendimiento</h3>
-              <div className="flex flex-wrap justify-around">
-                {reportData.data.map((employee: any) => (
-                  <div key={employee.id} className="w-full md:w-1/3 p-2">
-                    <div className="bg-white p-4 rounded-lg shadow">
-                      <div className="text-center mb-2">{employee.name}</div>
-                      <div className="relative pt-1">
-                        <div className="flex mb-2 items-center justify-between">
-                          <div>
-                            <span className="text-xs font-semibold inline-block text-purple-600">
-                              Eficiencia: {employee.performance.efficiency}%
-                            </span>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empleado</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tareas Completadas</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Eficiencia (%)</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valoración</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.data.map((employee: any, index: number) => (
+                    <tr key={index}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{employee.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.department}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{employee.performance.tasksCompleted}/{employee.performance.totalTasks}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="flex items-center">
+                          <span className="mr-2">{employee.performance.efficiency}%</span>
+                          <div className="w-24 bg-gray-200 rounded-full h-2.5">
+                            <div 
+                              className={`h-2.5 rounded-full ${
+                                parseFloat(employee.performance.efficiency) >= 90 ? 'bg-green-600' :
+                                parseFloat(employee.performance.efficiency) >= 80 ? 'bg-blue-600' :
+                                parseFloat(employee.performance.efficiency) >= 70 ? 'bg-yellow-500' :
+                                'bg-red-600'
+                              }`} 
+                              style={{ width: `${employee.performance.efficiency}%` }}
+                            ></div>
                           </div>
-                          <div className="text-right">
-                            <span className="text-xs font-semibold inline-block text-purple-600">
-                              {employee.performance.tasksCompleted}/{employee.performance.totalTasks} tareas
-                            </span>
-                          </div>
                         </div>
-                        <div className="overflow-hidden h-2 mb-4 text-xs flex rounded bg-purple-200">
-                          <div style={{ width: `${employee.performance.efficiency}%` }} className="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-purple-500"></div>
-                        </div>
-                        <div className="text-center mt-2">
-                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            employee.performance.rating === 'Excelente' ? 'bg-green-100 text-green-800' :
-                            employee.performance.rating === 'Bueno' ? 'bg-blue-100 text-blue-800' :
-                            employee.performance.rating === 'Regular' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {employee.performance.rating}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                          employee.performance.rating === 'Excelente' ? 'bg-green-100 text-green-800' :
+                          employee.performance.rating === 'Bueno' ? 'bg-blue-100 text-blue-800' :
+                          employee.performance.rating === 'Regular' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {employee.performance.rating}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
           
@@ -1031,55 +1013,70 @@ export default function ReportsPage() {
             <button
               onClick={() => downloadReport('pdf')}
               disabled={isDownloading}
-              className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center"
+              className={`btn-secondary flex items-center ${isDownloading && downloadFormat === 'pdf' ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isDownloading && downloadFormat === 'pdf' ? (
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Generando PDF...
+                </>
               ) : (
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                </svg>
+                <>
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                  </svg>
+                  Descargar PDF
+                </>
               )}
-              Descargar PDF
             </button>
             
             <button
               onClick={() => downloadReport('excel')}
               disabled={isDownloading}
-              className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center"
+              className={`btn-secondary flex items-center ${isDownloading && downloadFormat === 'excel' ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isDownloading && downloadFormat === 'excel' ? (
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Generando Excel...
+                </>
               ) : (
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
+                <>
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                  </svg>
+                  Descargar Excel
+                </>
               )}
-              Descargar Excel
             </button>
             
             <button
               onClick={() => downloadReport('csv')}
               disabled={isDownloading}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline flex items-center"
+              className={`btn-secondary flex items-center ${isDownloading && downloadFormat === 'csv' ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {isDownloading && downloadFormat === 'csv' ? (
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Generando CSV...
+                </>
               ) : (
-                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                </svg>
+                <>
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                  </svg>
+                  Descargar CSV
+                </>
               )}
-              Descargar CSV
             </button>
           </div>
         </div>
