@@ -202,7 +202,7 @@ export default function ViewEmployeePage() {
   const employeeStats = calculateStats();
 
   const formatDate = (dateString) => {
-    // Corregido: Usar tipos literales específicos en lugar de strings genéricas
+    // Corregido: Usar valores literales específicos en lugar de strings genéricas
     const options = { 
       year: "numeric", 
       month: "long", 
@@ -277,7 +277,7 @@ export default function ViewEmployeePage() {
             <div className="space-y-2">
               <p><span className="font-medium">Departamento:</span> {employeeData.department}</p>
               <p><span className="font-medium">Cargo:</span> {employeeData.position}</p>
-              <p><span className="font-medium">Fecha de Inicio:</span> {formatDate(employeeData.startDate)}</p>
+              <p><span className="font-medium">Fecha de Inicio:</span> {employeeData.startDate ? formatDate(employeeData.startDate) : 'No disponible'}</p>
               <p><span className="font-medium">Notas:</span> {employeeData.notes}</p>
             </div>
           </div>
