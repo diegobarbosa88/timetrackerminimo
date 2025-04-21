@@ -56,6 +56,24 @@ function AdminEmployeesPage() {
         position: 'Representante de Ventas',
         startDate: '2023-03-05',
         status: 'active'
+      },
+      {
+        id: 'EMP004',
+        name: 'Laura Gómez',
+        email: 'laura@example.com',
+        department: 'Tecnología',
+        position: 'Desarrolladora Frontend',
+        startDate: '2023-04-12',
+        status: 'active'
+      },
+      {
+        id: 'EMP005',
+        name: 'Javier López',
+        email: 'javier@example.com',
+        department: 'Recursos Humanos',
+        position: 'Coordinador de RRHH',
+        startDate: '2023-05-20',
+        status: 'active'
       }
     ];
   };

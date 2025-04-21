@@ -1,20 +1,42 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 
+// Definición de tipos para TypeScript
+interface DailyRecord {
+  date: string;
+  entryTime: string;
+  exitTime: string;
+  totalWorkTime: number;
+  client: string;
+}
+
+interface EmployeeRecord {
+  id: string;
+  name: string;
+  department: string;
+  dailyRecords: DailyRecord[];
+  totalMinutes: number;
+  totalDays: number;
+  totalHours?: number;
+  totalRemainingMinutes?: number;
+  avgDailyHours?: number;
+  avgDailyRemainingMinutes?: number;
+}
+
 // Componente de informes
 export default function ReportsPage() {
-  const [reportType, setReportType] = React.useState('attendance');
-  const [dateRange, setDateRange] = React.useState('week');
-  const [employeeFilter, setEmployeeFilter] = React.useState('all');
-  const [isGenerating, setIsGenerating] = React.useState(false);
-  const [reportGenerated, setReportGenerated] = React.useState(false);
-  const [reportData, setReportData] = React.useState(null);
-  const [isDownloading, setIsDownloading] = React.useState(false);
-  const [downloadFormat, setDownloadFormat] = React.useState('');
+  const [reportType, setReportType] = useState('daily');
+  const [dateRange, setDateRange] = useState('week');
+  const [employeeFilter, setEmployeeFilter] = useState('all');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [reportGenerated, setReportGenerated] = useState(false);
+  const [reportData, setReportData] = useState<any>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadFormat, setDownloadFormat] = useState('');
   
   // Referencias para exportación
   const reportRef = React.useRef(null);
@@ -34,7 +56,7 @@ export default function ReportsPage() {
   };
 
   // Función para generar datos de informe basados en los filtros
-  const generateReportData = (type, range, employee) => {
+  const generateReportData = (type: string, range: string, employee: string) => {
     // Obtener datos de empleados del localStorage o usar datos de muestra
     const employees = getEmployeesData();
     
@@ -68,98 +90,160 @@ export default function ReportsPage() {
       return matchesDate && matchesEmployee;
     });
     
-    // Agrupamos los registros por empleado
-    const employeeRecords = {};
-    filteredRecords.forEach(record => {
-      if (!employeeRecords[record.userId]) {
-        employeeRecords[record.userId] = [];
-      }
-      employeeRecords[record.userId].push(record);
-    });
-    
-    const reportData = employees
-      .filter(emp => employee === 'all' || emp.id === employee)
-      .map(emp => {
-        const records = employeeRecords[emp.id] || [];
-        const totalDays = getWorkingDaysInRange(startDate, now);
-        const workedDays = new Set(records.map(r => r.date)).size;
-        const attendanceRate = totalDays > 0 ? (workedDays / totalDays) * 100 : 0;
-        
-        // Calculamos las horas trabajadas
-        let totalMinutes = 0;
-        records.forEach(record => {
-          if (record.totalWorkTime) {
-            totalMinutes += record.totalWorkTime;
-          }
+    // Para informes diarios, agrupamos los registros por empleado y luego por fecha
+    if (type === 'daily') {
+      // Agrupar por empleado
+      const employeeRecords: Record<string, EmployeeRecord> = {};
+      
+      // Inicializar estructura para cada empleado
+      employees
+        .filter(emp => employee === 'all' || emp.id === employee)
+        .forEach(emp => {
+          employeeRecords[emp.id] = {
+            id: emp.id,
+            name: emp.name,
+            department: emp.department,
+            dailyRecords: [],
+            totalMinutes: 0,
+            totalDays: 0
+          };
         });
-        
-        const totalHours = Math.floor(totalMinutes / 60);
-        const remainingMinutes = totalMinutes % 60;
-        
-        // Calculamos el promedio diario
-        const avgDailyMinutes = workedDays > 0 ? totalMinutes / workedDays : 0;
-        const avgDailyHours = Math.floor(avgDailyMinutes / 60);
-        const avgDailyRemainingMinutes = Math.floor(avgDailyMinutes % 60);
-        
-        // Calculamos las horas extra (más de 8 horas por día)
-        let overtimeMinutes = 0;
-        records.forEach(record => {
-          if (record.totalWorkTime && record.totalWorkTime > 480) { // 8 horas = 480 minutos
-            overtimeMinutes += (record.totalWorkTime - 480);
-          }
-        });
-        
-        const overtimeHours = Math.floor(overtimeMinutes / 60);
-        const overtimeRemainingMinutes = overtimeMinutes % 60;
-        
-        // Calculamos las llegadas tardías
-        const lateDays = records.filter(record => record.usedEntryTolerance).length;
-        
-        // Datos de rendimiento (simulados)
-        const tasksCompleted = Math.floor(Math.random() * 10) + 15;
-        const totalTasks = 25;
-        const efficiency = (tasksCompleted / totalTasks) * 100;
-        
-        let performance;
-        if (efficiency >= 90) performance = 'Excelente';
-        else if (efficiency >= 80) performance = 'Bueno';
-        else if (efficiency >= 70) performance = 'Regular';
-        else performance = 'Necesita mejorar';
-        
-        return {
-          id: emp.id,
-          name: emp.name,
-          department: emp.department,
-          attendance: {
-            workedDays,
-            totalDays,
-            attendanceRate: attendanceRate.toFixed(1),
-            lateDays
-          },
-          hours: {
-            totalHours,
-            remainingMinutes,
-            avgDailyHours,
-            avgDailyRemainingMinutes,
-            overtimeHours,
-            overtimeRemainingMinutes
-          },
-          performance: {
-            tasksCompleted,
-            totalTasks,
-            efficiency: efficiency.toFixed(1),
-            rating: performance
-          }
-        };
+      
+      // Agrupar registros por empleado
+      filteredRecords.forEach(record => {
+        if (employeeRecords[record.userId]) {
+          // Añadir registro diario
+          employeeRecords[record.userId].dailyRecords.push({
+            date: record.date,
+            entryTime: record.entryTime,
+            exitTime: record.exitTime,
+            totalWorkTime: record.totalWorkTime,
+            client: record.client
+          });
+          
+          // Actualizar totales
+          employeeRecords[record.userId].totalMinutes += record.totalWorkTime || 0;
+          employeeRecords[record.userId].totalDays += 1;
+        }
       });
-    
-    return {
-      type,
-      range,
-      employee,
-      generatedAt: new Date().toISOString(),
-      data: reportData
-    };
+      
+      // Ordenar registros diarios por fecha (más reciente primero)
+      Object.values(employeeRecords).forEach(empRecord => {
+        empRecord.dailyRecords.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        // Calcular totales en formato legible
+        empRecord.totalHours = Math.floor(empRecord.totalMinutes / 60);
+        empRecord.totalRemainingMinutes = empRecord.totalMinutes % 60;
+        
+        // Calcular promedio diario
+        const avgDailyMinutes = empRecord.totalDays > 0 ? empRecord.totalMinutes / empRecord.totalDays : 0;
+        empRecord.avgDailyHours = Math.floor(avgDailyMinutes / 60);
+        empRecord.avgDailyRemainingMinutes = Math.floor(avgDailyMinutes % 60);
+      });
+      
+      return {
+        type,
+        range,
+        employee,
+        generatedAt: new Date().toISOString(),
+        data: Object.values(employeeRecords)
+      };
+    } 
+    // Para otros tipos de informes (resumen)
+    else {
+      // Agrupamos los registros por empleado
+      const employeeRecords: Record<string, any[]> = {};
+      filteredRecords.forEach(record => {
+        if (!employeeRecords[record.userId]) {
+          employeeRecords[record.userId] = [];
+        }
+        employeeRecords[record.userId].push(record);
+      });
+      
+      const reportData = employees
+        .filter(emp => employee === 'all' || emp.id === employee)
+        .map(emp => {
+          const records = employeeRecords[emp.id] || [];
+          const totalDays = getWorkingDaysInRange(startDate, now);
+          const workedDays = new Set(records.map(r => r.date)).size;
+          const attendanceRate = totalDays > 0 ? (workedDays / totalDays) * 100 : 0;
+          
+          // Calculamos las horas trabajadas
+          let totalMinutes = 0;
+          records.forEach(record => {
+            if (record.totalWorkTime) {
+              totalMinutes += record.totalWorkTime;
+            }
+          });
+          
+          const totalHours = Math.floor(totalMinutes / 60);
+          const remainingMinutes = totalMinutes % 60;
+          
+          // Calculamos el promedio diario
+          const avgDailyMinutes = workedDays > 0 ? totalMinutes / workedDays : 0;
+          const avgDailyHours = Math.floor(avgDailyMinutes / 60);
+          const avgDailyRemainingMinutes = Math.floor(avgDailyMinutes % 60);
+          
+          // Calculamos las horas extra (más de 8 horas por día)
+          let overtimeMinutes = 0;
+          records.forEach(record => {
+            if (record.totalWorkTime && record.totalWorkTime > 480) { // 8 horas = 480 minutos
+              overtimeMinutes += (record.totalWorkTime - 480);
+            }
+          });
+          
+          const overtimeHours = Math.floor(overtimeMinutes / 60);
+          const overtimeRemainingMinutes = overtimeMinutes % 60;
+          
+          // Calculamos las llegadas tardías
+          const lateDays = records.filter(record => record.usedEntryTolerance).length;
+          
+          // Datos de rendimiento (simulados)
+          const tasksCompleted = Math.floor(Math.random() * 10) + 15;
+          const totalTasks = 25;
+          const efficiency = (tasksCompleted / totalTasks) * 100;
+          
+          let performance;
+          if (efficiency >= 90) performance = 'Excelente';
+          else if (efficiency >= 80) performance = 'Bueno';
+          else if (efficiency >= 70) performance = 'Regular';
+          else performance = 'Necesita mejorar';
+          
+          return {
+            id: emp.id,
+            name: emp.name,
+            department: emp.department,
+            attendance: {
+              workedDays,
+              totalDays,
+              attendanceRate: attendanceRate.toFixed(1),
+              lateDays
+            },
+            hours: {
+              totalHours,
+              remainingMinutes,
+              avgDailyHours,
+              avgDailyRemainingMinutes,
+              overtimeHours,
+              overtimeRemainingMinutes
+            },
+            performance: {
+              tasksCompleted,
+              totalTasks,
+              efficiency: efficiency.toFixed(1),
+              rating: performance
+            }
+          };
+        });
+      
+      return {
+        type,
+        range,
+        employee,
+        generatedAt: new Date().toISOString(),
+        data: reportData
+      };
+    }
   };
   
   // Función para obtener empleados del localStorage o usar datos de muestra
@@ -262,7 +346,7 @@ export default function ReportsPage() {
   };
   
   // Función auxiliar para calcular días laborables en un rango
-  const getWorkingDaysInRange = (startDate, endDate) => {
+  const getWorkingDaysInRange = (startDate: Date, endDate: Date) => {
     let count = 0;
     const currentDate = new Date(startDate.getTime());
     
@@ -277,8 +361,21 @@ export default function ReportsPage() {
     return count;
   };
   
+  // Función para formatear minutos como horas y minutos
+  const formatMinutesToHoursMinutes = (totalMinutes: number) => {
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h ${minutes}m`;
+  };
+  
+  // Función para formatear fecha
+  const formatDate = (dateString: string) => {
+    const options: Intl.DateTimeFormatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    return new Date(dateString).toLocaleDateString('es-ES', options);
+  };
+  
   // Función para descargar el informe
-  const downloadReport = (format) => {
+  const downloadReport = (format: string) => {
     if (!reportData) return;
     
     setIsDownloading(true);
@@ -349,33 +446,80 @@ export default function ReportsPage() {
     try {
       const reportTitle = getReportTitle();
       
-      // Preparamos los datos para Excel
-      const excelData = [
-        ['Informe: ' + reportTitle],
-        ['Generado el: ' + new Date().toLocaleString()],
-        [''],
-        ['Empleado', 'Departamento', ...getHeadersByReportType()]
-      ];
-      
-      // Añadimos los datos de cada empleado
-      reportData.data.forEach(employee => {
-        const rowData = [
-          employee.name,
-          employee.department,
-          ...getEmployeeDataByReportType(employee)
+      if (reportType === 'daily') {
+        // Preparamos los datos para Excel - informe diario detallado
+        const excelData = [
+          ['Informe: ' + reportTitle],
+          ['Generado el: ' + new Date().toLocaleString()],
+          ['']
         ];
-        excelData.push(rowData);
-      });
-      
-      // Creamos el libro y la hoja
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.aoa_to_sheet(excelData);
-      
-      // Añadimos la hoja al libro
-      XLSX.utils.book_append_sheet(wb, ws, 'Informe');
-      
-      // Guardamos el archivo
-      XLSX.writeFile(wb, `${reportTitle.replace(/\s+/g, '_')}.xlsx`);
+        
+        // Para cada empleado
+        reportData.data.forEach((employee: EmployeeRecord) => {
+          // Añadir encabezado de empleado
+          excelData.push([`Empleado: ${employee.name}`, `Departamento: ${employee.department}`]);
+          excelData.push(['Total de días trabajados:', String(employee.totalDays)]);
+          excelData.push(['Total de horas trabajadas:', `${employee.totalHours}h ${employee.totalRemainingMinutes}m`]);
+          excelData.push(['Promedio diario:', `${employee.avgDailyHours}h ${employee.avgDailyRemainingMinutes}m`]);
+          excelData.push(['']);
+          
+          // Añadir encabezados de tabla
+          excelData.push(['Fecha', 'Hora de Entrada', 'Hora de Salida', 'Cliente', 'Horas Trabajadas']);
+          
+          // Añadir registros diarios
+          employee.dailyRecords.forEach(record => {
+            excelData.push([
+              formatDate(record.date),
+              record.entryTime,
+              record.exitTime,
+              record.client,
+              formatMinutesToHoursMinutes(record.totalWorkTime)
+            ]);
+          });
+          
+          // Añadir espacio entre empleados
+          excelData.push(['']);
+          excelData.push(['']);
+        });
+        
+        // Creamos el libro y la hoja
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+        
+        // Añadimos la hoja al libro
+        XLSX.utils.book_append_sheet(wb, ws, 'Informe Diario');
+        
+        // Guardamos el archivo
+        XLSX.writeFile(wb, `${reportTitle.replace(/\s+/g, '_')}.xlsx`);
+      } else {
+        // Preparamos los datos para Excel - informes de resumen
+        const excelData = [
+          ['Informe: ' + reportTitle],
+          ['Generado el: ' + new Date().toLocaleString()],
+          [''],
+          ['Empleado', 'Departamento', ...getHeadersByReportType()]
+        ];
+        
+        // Añadimos los datos de cada empleado
+        reportData.data.forEach((employee: any) => {
+          const rowData = [
+            employee.name,
+            employee.department,
+            ...getEmployeeDataByReportType(employee)
+          ];
+          excelData.push(rowData);
+        });
+        
+        // Creamos el libro y la hoja
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+        
+        // Añadimos la hoja al libro
+        XLSX.utils.book_append_sheet(wb, ws, 'Informe');
+        
+        // Guardamos el archivo
+        XLSX.writeFile(wb, `${reportTitle.replace(/\s+/g, '_')}.xlsx`);
+      }
     } catch (error) {
       console.error('Error al generar Excel:', error);
       alert('Hubo un error al generar el archivo Excel. Por favor, inténtalo de nuevo.');
@@ -387,25 +531,61 @@ export default function ReportsPage() {
     try {
       const reportTitle = getReportTitle();
       
-      // Preparamos los datos para CSV
-      let csvContent = 'Empleado,Departamento,' + getHeadersByReportType().join(',') + '\n';
-      
-      // Añadimos los datos de cada empleado
-      reportData.data.forEach(employee => {
-        csvContent += `"${employee.name}","${employee.department}",` + 
-          getEmployeeDataByReportType(employee).map(d => `"${d}"`).join(',') + '\n';
-      });
-      
-      // Creamos el blob y lo descargamos
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${reportTitle.replace(/\s+/g, '_')}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      if (reportType === 'daily') {
+        // Preparamos los datos para CSV - informe diario detallado
+        let csvContent = '';
+        
+        // Para cada empleado
+        reportData.data.forEach((employee: EmployeeRecord) => {
+          // Añadir encabezado de empleado
+          csvContent += `"Empleado:","${employee.name}","Departamento:","${employee.department}"\n`;
+          csvContent += `"Total de días trabajados:","${employee.totalDays}"\n`;
+          csvContent += `"Total de horas trabajadas:","${employee.totalHours}h ${employee.totalRemainingMinutes}m"\n`;
+          csvContent += `"Promedio diario:","${employee.avgDailyHours}h ${employee.avgDailyRemainingMinutes}m"\n\n`;
+          
+          // Añadir encabezados de tabla
+          csvContent += '"Fecha","Hora de Entrada","Hora de Salida","Cliente","Horas Trabajadas"\n';
+          
+          // Añadir registros diarios
+          employee.dailyRecords.forEach(record => {
+            csvContent += `"${formatDate(record.date)}","${record.entryTime}","${record.exitTime}","${record.client}","${formatMinutesToHoursMinutes(record.totalWorkTime)}"\n`;
+          });
+          
+          // Añadir espacio entre empleados
+          csvContent += '\n\n';
+        });
+        
+        // Creamos el blob y lo descargamos
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${reportTitle.replace(/\s+/g, '_')}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        // Preparamos los datos para CSV - informes de resumen
+        let csvContent = 'Empleado,Departamento,' + getHeadersByReportType().join(',') + '\n';
+        
+        // Añadimos los datos de cada empleado
+        reportData.data.forEach((employee: any) => {
+          csvContent += `"${employee.name}","${employee.department}",` + 
+            getEmployeeDataByReportType(employee).map((d: string) => `"${d}"`).join(',') + '\n';
+        });
+        
+        // Creamos el blob y lo descargamos
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${reportTitle.replace(/\s+/g, '_')}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
     } catch (error) {
       console.error('Error al generar CSV:', error);
       alert('Hubo un error al generar el archivo CSV. Por favor, inténtalo de nuevo.');
@@ -415,6 +595,7 @@ export default function ReportsPage() {
   // Función auxiliar para obtener el título del informe
   const getReportTitle = () => {
     const typeText = 
+      reportType === 'daily' ? 'Informe Diario Detallado' :
       reportType === 'attendance' ? 'Informe de Asistencia' :
       reportType === 'hours' ? 'Informe de Horas Trabajadas' :
       'Informe de Rendimiento';
@@ -441,7 +622,7 @@ export default function ReportsPage() {
   };
   
   // Función auxiliar para obtener datos de empleado según tipo de informe
-  const getEmployeeDataByReportType = (employee) => {
+  const getEmployeeDataByReportType = (employee: any) => {
     if (reportType === 'attendance') {
       return [
         `${employee.attendance.workedDays}/${employee.attendance.totalDays}`,
@@ -479,6 +660,7 @@ export default function ReportsPage() {
               className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
               disabled={isGenerating}
             >
+              <option value="daily">Informe Diario Detallado</option>
               <option value="attendance">Asistencia</option>
               <option value="hours">Horas Trabajadas</option>
               <option value="performance">Rendimiento</option>
@@ -549,7 +731,8 @@ export default function ReportsPage() {
         <div className="bg-white shadow-md rounded-lg p-6 mb-8" ref={reportRef}>
           <div className="mb-6">
             <h2 className="text-2xl font-bold mb-2">
-              {reportType === 'attendance' ? 'Informe de Asistencia' :
+              {reportType === 'daily' ? 'Informe Diario Detallado' :
+               reportType === 'attendance' ? 'Informe de Asistencia' :
                reportType === 'hours' ? 'Informe de Horas Trabajadas' :
                'Informe de Rendimiento'} - 
               {dateRange === 'week' ? ' Esta Semana' :
@@ -562,12 +745,87 @@ export default function ReportsPage() {
             </span>
           </div>
           
-          {/* Visualización gráfica */}
+          {/* Informe diario detallado */}
+          {reportType === 'daily' && (
+            <div>
+              {reportData.data.map((employee: EmployeeRecord, empIndex: number) => (
+                <div key={employee.id} className="mb-8">
+                  <div className="bg-gray-100 p-4 rounded-lg mb-4">
+                    <h3 className="text-xl font-semibold">{employee.name}</h3>
+                    <p className="text-gray-600">Departamento: {employee.department}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-3">
+                      <div className="bg-white p-3 rounded shadow">
+                        <p className="text-sm text-gray-500">Total días trabajados</p>
+                        <p className="text-xl font-bold">{employee.totalDays}</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow">
+                        <p className="text-sm text-gray-500">Total horas trabajadas</p>
+                        <p className="text-xl font-bold">{employee.totalHours}h {employee.totalRemainingMinutes}m</p>
+                      </div>
+                      <div className="bg-white p-3 rounded shadow">
+                        <p className="text-sm text-gray-500">Promedio diario</p>
+                        <p className="text-xl font-bold">{employee.avgDailyHours}h {employee.avgDailyRemainingMinutes}m</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Tabla de registros diarios */}
+                  {employee.dailyRecords.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora de Entrada</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora de Salida</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Trabajadas</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {employee.dailyRecords.map((record, index) => (
+                            <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {formatDate(record.date)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {record.entryTime}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {record.exitTime}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {record.client}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {formatMinutesToHoursMinutes(record.totalWorkTime)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 bg-gray-50 rounded">
+                      <p className="text-gray-500">No hay registros para este empleado en el período seleccionado.</p>
+                    </div>
+                  )}
+                  
+                  {/* Separador entre empleados */}
+                  {empIndex < reportData.data.length - 1 && (
+                    <hr className="my-8 border-gray-200" />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Visualización gráfica para otros tipos de informes */}
           {reportType === 'attendance' && (
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="text-lg font-medium mb-4">Resumen de Asistencia</h3>
               <div className="flex flex-wrap justify-around">
-                {reportData.data.map(employee => (
+                {reportData.data.map((employee: any) => (
                   <div key={employee.id} className="w-full md:w-1/3 p-2">
                     <div className="bg-white p-4 rounded-lg shadow">
                       <div className="text-center mb-2">{employee.name}</div>
@@ -599,7 +857,7 @@ export default function ReportsPage() {
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="text-lg font-medium mb-4">Distribución de Horas</h3>
               <div className="flex flex-wrap justify-around">
-                {reportData.data.map(employee => (
+                {reportData.data.map((employee: any) => (
                   <div key={employee.id} className="w-full md:w-1/3 p-2">
                     <div className="bg-white p-4 rounded-lg shadow">
                       <div className="text-center mb-2">{employee.name}</div>
@@ -634,7 +892,7 @@ export default function ReportsPage() {
             <div className="mb-6 p-4 bg-gray-50 rounded-lg">
               <h3 className="text-lg font-medium mb-4">Rendimiento</h3>
               <div className="flex flex-wrap justify-around">
-                {reportData.data.map(employee => (
+                {reportData.data.map((employee: any) => (
                   <div key={employee.id} className="w-full md:w-1/3 p-2">
                     <div className="bg-white p-4 rounded-lg shadow">
                       <div className="text-center mb-2">{employee.name}</div>
@@ -672,76 +930,78 @@ export default function ReportsPage() {
             </div>
           )}
           
-          {/* Tabla de datos del informe */}
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empleado</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
-                  {reportType === 'attendance' && (
-                    <>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Días Trabajados</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asistencia</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Llegadas Tarde</th>
-                    </>
-                  )}
-                  {reportType === 'hours' && (
-                    <>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Totales</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promedio Diario</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Extra</th>
-                    </>
-                  )}
-                  {reportType === 'performance' && (
-                    <>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tareas Completadas</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Eficiencia</th>
-                      <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valoración</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {reportData.data.map(employee => (
-                  <tr key={employee.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{employee.name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.department}</td>
+          {/* Tabla de datos del informe (para tipos que no son diarios) */}
+          {reportType !== 'daily' && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empleado</th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
                     {reportType === 'attendance' && (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.workedDays}/{employee.attendance.totalDays}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.attendanceRate}%</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.lateDays}</td>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Días Trabajados</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asistencia</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Llegadas Tarde</th>
                       </>
                     )}
                     {reportType === 'hours' && (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.totalHours}h {employee.hours.remainingMinutes}m</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.avgDailyHours}h {employee.hours.avgDailyRemainingMinutes}m</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.overtimeHours}h {employee.hours.overtimeRemainingMinutes}m</td>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Totales</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Promedio Diario</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Horas Extra</th>
                       </>
                     )}
                     {reportType === 'performance' && (
                       <>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.performance.tasksCompleted}/{employee.performance.totalTasks}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.performance.efficiency}%</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            employee.performance.rating === 'Excelente' ? 'bg-green-100 text-green-800' :
-                            employee.performance.rating === 'Bueno' ? 'bg-blue-100 text-blue-800' :
-                            employee.performance.rating === 'Regular' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                            {employee.performance.rating}
-                          </span>
-                        </td>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tareas Completadas</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Eficiencia</th>
+                        <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valoración</th>
                       </>
                     )}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {reportData.data.map((employee: any) => (
+                    <tr key={employee.id}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{employee.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.department}</td>
+                      {reportType === 'attendance' && (
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.workedDays}/{employee.attendance.totalDays}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.attendanceRate}%</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.attendance.lateDays}</td>
+                        </>
+                      )}
+                      {reportType === 'hours' && (
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.totalHours}h {employee.hours.remainingMinutes}m</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.avgDailyHours}h {employee.hours.avgDailyRemainingMinutes}m</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.hours.overtimeHours}h {employee.hours.overtimeRemainingMinutes}m</td>
+                        </>
+                      )}
+                      {reportType === 'performance' && (
+                        <>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.performance.tasksCompleted}/{employee.performance.totalTasks}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{employee.performance.efficiency}%</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                              employee.performance.rating === 'Excelente' ? 'bg-green-100 text-green-800' :
+                              employee.performance.rating === 'Bueno' ? 'bg-blue-100 text-blue-800' :
+                              employee.performance.rating === 'Regular' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {employee.performance.rating}
+                            </span>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           
           <div className="mt-6 flex justify-end">
             <button 
