@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from ../../lib/auth;
+import { useAuth } from '../../lib/auth';
 import { sampleTimeRecords } from '@/lib/sample-data';
 
 export default function DashboardPage() {
