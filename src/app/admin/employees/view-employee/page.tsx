@@ -2,9 +2,40 @@
 
 import React, { useEffect, useState } from 'react';
 
+// Definir interfaces para TypeScript
+interface TimeRecord {
+  date: string;
+  entry: string;
+  exit: string;
+  total: string;
+  status: string;
+}
+
+interface EmployeeData {
+  id: string;
+  name: string;
+  email: string;
+  department: string;
+  position: string;
+  startDate: string;
+  status: string;
+  statusClass: string;
+  phone: string;
+  address: string;
+  emergencyContact: string;
+  notes: string;
+}
+
+interface EmployeeStats {
+  hoursThisMonth: string;
+  daysWorked: number;
+  punctuality: string;
+  extraHours: string;
+}
+
 export default function ViewEmployeePage() {
-  const [employeeId, setEmployeeId] = useState('');
-  const [employeeData, setEmployeeData] = useState({
+  const [employeeId, setEmployeeId] = useState<string>('');
+  const [employeeData, setEmployeeData] = useState<EmployeeData>({
     id: '',
     name: '',
     email: '',
@@ -18,13 +49,13 @@ export default function ViewEmployeePage() {
     emergencyContact: 'No disponible',
     notes: 'No disponible'
   });
-  const [timeRecords, setTimeRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [timeRecords, setTimeRecords] = useState<TimeRecord[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
 
   // Obtener el ID del empleado de la URL al cargar la página
   useEffect(() => {
     // Función para obtener parámetros de la URL
-    const getQueryParam = (param) => {
+    const getQueryParam = (param: string): string | null => {
       const urlParams = new URLSearchParams(window.location.search);
       return urlParams.get(param);
     };
@@ -71,12 +102,12 @@ export default function ViewEmployeePage() {
   }, []);
 
   // Función para cargar empleado desde la lista completa
-  const loadEmployeeFromList = (employeeId) => {
+  const loadEmployeeFromList = (employeeId: string): void => {
     try {
       const storedEmployees = localStorage.getItem('timetracker_employees');
       if (storedEmployees) {
         const employees = JSON.parse(storedEmployees);
-        const employee = employees.find(emp => emp.id === employeeId);
+        const employee = employees.find((emp: any) => emp.id === employeeId);
         
         if (employee) {
           const employeeInfo = {
@@ -95,10 +126,10 @@ export default function ViewEmployeePage() {
   };
 
   // Función para cargar registros de tiempo
-  const loadTimeRecords = (employeeId) => {
+  const loadTimeRecords = (employeeId: string): void => {
     // En una aplicación real, estos datos vendrían de una API o base de datos
     // Por ahora, generamos datos de ejemplo para el último mes
-    const records = [];
+    const records: TimeRecord[] = [];
     const today = new Date();
     
     // Generar registros para los últimos 30 días
@@ -141,16 +172,16 @@ export default function ViewEmployeePage() {
     
     // Ordenar registros por fecha (más reciente primero)
     records.sort((a, b) => {
-      const dateA = new Date(a.date);
-      const dateB = new Date(b.date);
-      return dateB.getTime() - dateA.getTime();
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateB - dateA;
     });
     
     setTimeRecords(records);
   };
 
   // Calcular estadísticas basadas en los registros de tiempo
-  const calculateStats = () => {
+  const calculateStats = (): EmployeeStats => {
     if (timeRecords.length === 0) {
       return {
         hoursThisMonth: '0h 0m',
@@ -201,9 +232,8 @@ export default function ViewEmployeePage() {
 
   const employeeStats = calculateStats();
 
-  const formatDate = (dateString) => {
-    // Corregido: Usar valores literales específicos en lugar de strings genéricas
-    const options = { 
+  const formatDate = (dateString: string): string => {
+    const options: Intl.DateTimeFormatOptions = { 
       year: "numeric", 
       month: "long", 
       day: "numeric" 
