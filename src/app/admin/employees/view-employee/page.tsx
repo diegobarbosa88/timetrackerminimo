@@ -9,6 +9,7 @@ interface TimeRecord {
   exit: string;
   total: string;
   status: string;
+  isSimulated?: boolean;
 }
 
 interface EmployeeData {
@@ -24,6 +25,7 @@ interface EmployeeData {
   address: string;
   emergencyContact: string;
   notes: string;
+  timeRecords?: TimeRecord[];
 }
 
 interface EmployeeStats {
@@ -51,6 +53,7 @@ export default function ViewEmployeePage() {
   });
   const [timeRecords, setTimeRecords] = useState<TimeRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSimulatedData, setIsSimulatedData] = useState<boolean>(true);
 
   // Obtener el ID del empleado de la URL al cargar la página
   useEffect(() => {
@@ -81,6 +84,16 @@ export default function ViewEmployeePage() {
             };
             
             setEmployeeData(employeeInfo);
+            
+            // Verificar si el empleado tiene registros de tiempo reales
+            if (selectedEmployee.timeRecords && selectedEmployee.timeRecords.length > 0) {
+              setTimeRecords(selectedEmployee.timeRecords);
+              setIsSimulatedData(false);
+            } else {
+              // Si no tiene registros reales, cargar datos simulados
+              loadTimeRecords(id);
+              setIsSimulatedData(true);
+            }
           } else {
             // Si el ID no coincide, buscar en la lista completa de empleados
             loadEmployeeFromList(id);
@@ -93,9 +106,6 @@ export default function ViewEmployeePage() {
         console.error('Error al cargar datos del empleado:', error);
         loadEmployeeFromList(id);
       }
-      
-      // Cargar registros de tiempo simulados para este empleado
-      loadTimeRecords(id);
     }
     
     setLoading(false);
@@ -118,14 +128,35 @@ export default function ViewEmployeePage() {
           };
           
           setEmployeeData(employeeInfo);
+          
+          // Verificar si el empleado tiene registros de tiempo reales
+          if (employee.timeRecords && employee.timeRecords.length > 0) {
+            setTimeRecords(employee.timeRecords);
+            setIsSimulatedData(false);
+          } else {
+            // Si no tiene registros reales, cargar datos simulados
+            loadTimeRecords(employeeId);
+            setIsSimulatedData(true);
+          }
+        } else {
+          // Si no se encuentra el empleado, cargar datos simulados
+          loadTimeRecords(employeeId);
+          setIsSimulatedData(true);
         }
+      } else {
+        // Si no hay empleados almacenados, cargar datos simulados
+        loadTimeRecords(employeeId);
+        setIsSimulatedData(true);
       }
     } catch (error) {
       console.error('Error al buscar empleado en la lista:', error);
+      // En caso de error, cargar datos simulados
+      loadTimeRecords(employeeId);
+      setIsSimulatedData(true);
     }
   };
 
-  // Función para cargar registros de tiempo
+  // Función para cargar registros de tiempo simulados
   const loadTimeRecords = (employeeId: string): void => {
     // En una aplicación real, estos datos vendrían de una API o base de datos
     // Por ahora, generamos datos de ejemplo para el último mes
@@ -165,7 +196,8 @@ export default function ViewEmployeePage() {
           entry: entryTime,
           exit: exitTime,
           total: totalTime,
-          status: status
+          status: status,
+          isSimulated: true
         });
       }
     }
@@ -316,7 +348,14 @@ export default function ViewEmployeePage() {
       
       {/* Estadísticas laborales */}
       <div className="bg-white shadow-md rounded-lg p-6 mb-8">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800">Estadísticas Laborales (Mes Actual)</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-800">Estadísticas Laborales (Mes Actual)</h3>
+          {isSimulatedData && (
+            <div className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+              Datos simulados para demostración
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-blue-50 p-4 rounded-lg">
             <h4 className="text-sm font-medium text-blue-800">Horas Trabajadas</h4>
@@ -339,7 +378,22 @@ export default function ViewEmployeePage() {
       
       {/* Historial de registros */}
       <div className="bg-white shadow-md rounded-lg p-6">
-        <h3 className="text-lg font-semibold mb-4 text-gray-800">Historial de Registros Recientes</h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-800">Historial de Registros Recientes</h3>
+          {isSimulatedData && (
+            <div className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+              Datos simulados para demostración
+            </div>
+          )}
+        </div>
+        
+        {isSimulatedData && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-6" role="alert">
+            <p className="font-bold">Información</p>
+            <p>Los registros mostrados son datos simulados para fines de demostración. Este empleado aún no tiene registros de tiempo reales en el sistema.</p>
+          </div>
+        )}
+        
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -352,19 +406,27 @@ export default function ViewEmployeePage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {timeRecords.slice(0, 5).map((record, index) => (
-                <tr key={index}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(record.date)}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.entry}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.exit}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.total}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'Completado' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                      {record.status}
-                    </span>
+              {timeRecords.length > 0 ? (
+                timeRecords.slice(0, 5).map((record, index) => (
+                  <tr key={index} className={record.isSimulated ? "bg-blue-50" : ""}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{formatDate(record.date)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.entry}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.exit}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{record.total}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${record.status === 'Completado' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                        {record.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
+                    No hay registros disponibles para este empleado.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
