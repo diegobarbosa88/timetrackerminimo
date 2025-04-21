@@ -144,8 +144,9 @@ export default function EmployeesPage() {
 
 
   const handleEditEmployee = (id) => {
-    alert(`Editar empleado con ID: ${id} - Próximamente`);
-  };
+  // En lugar de mostrar una alerta, redirigimos a la página de edición
+  router.push(`/admin/employees/edit-employee?id=${id}`);
+};
 
   const handleViewEmployee = (id) => {
   // En lugar de mostrar una alerta, redirigimos a la página de visualización
