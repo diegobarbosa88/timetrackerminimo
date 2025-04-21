@@ -1,26 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../../lib/auth';
-import { sampleTimeRecords } from '../../lib/sample-data';
+import React from 'react';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import html2canvas from 'html2canvas';
 
-// Componente de informes accesible para administradores y empleados
+// Componente de informes
 export default function ReportsPage() {
-  const { user } = useAuth();
-  const [reportType, setReportType] = useState('attendance');
-  const [dateRange, setDateRange] = useState('week');
-  const [employeeFilter, setEmployeeFilter] = useState('all');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [reportGenerated, setReportGenerated] = useState(false);
-  const [reportData, setReportData] = useState(null);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadFormat, setDownloadFormat] = useState('');
+  const [reportType, setReportType] = React.useState('attendance');
+  const [dateRange, setDateRange] = React.useState('week');
+  const [employeeFilter, setEmployeeFilter] = React.useState('all');
+  const [isGenerating, setIsGenerating] = React.useState(false);
+  const [reportGenerated, setReportGenerated] = React.useState(false);
+  const [reportData, setReportData] = React.useState(null);
+  const [isDownloading, setIsDownloading] = React.useState(false);
+  const [downloadFormat, setDownloadFormat] = React.useState('');
   
   // Referencias para exportación
-  const reportRef = useRef(null);
+  const reportRef = React.useRef(null);
 
   // Función para generar el informe
   const generateReport = () => {
@@ -38,8 +35,11 @@ export default function ReportsPage() {
 
   // Función para generar datos de informe basados en los filtros
   const generateReportData = (type, range, employee) => {
-    // En una implementación real, esto haría una llamada a la API
-    // Para esta demo, generamos datos de ejemplo basados en los filtros
+    // Obtener datos de empleados del localStorage o usar datos de muestra
+    const employees = getEmployeesData();
+    
+    // Obtener registros de tiempo del localStorage o usar datos de muestra
+    const timeRecords = getTimeRecordsData();
     
     // Filtramos los registros de tiempo según el rango de fechas
     const now = new Date();
@@ -61,7 +61,7 @@ export default function ReportsPage() {
     }
     
     // Filtramos por empleado si es necesario
-    const filteredRecords = sampleTimeRecords.filter(record => {
+    const filteredRecords = timeRecords.filter(record => {
       const recordDate = new Date(record.date);
       const matchesDate = recordDate >= startDate && recordDate <= now;
       const matchesEmployee = employee === 'all' || record.userId === employee;
@@ -76,13 +76,6 @@ export default function ReportsPage() {
       }
       employeeRecords[record.userId].push(record);
     });
-    
-    // Generamos estadísticas según el tipo de informe
-    const employees = [
-      { id: 'EMP001', name: 'Carlos Rodríguez', department: 'Operaciones' },
-      { id: 'EMP002', name: 'Ana Martínez', department: 'Administración' },
-      { id: 'EMP003', name: 'Miguel Sánchez', department: 'Ventas' }
-    ];
     
     const reportData = employees
       .filter(emp => employee === 'all' || emp.id === employee)
@@ -167,6 +160,105 @@ export default function ReportsPage() {
       generatedAt: new Date().toISOString(),
       data: reportData
     };
+  };
+  
+  // Función para obtener empleados del localStorage o usar datos de muestra
+  const getEmployeesData = () => {
+    try {
+      const storedEmployees = localStorage.getItem('timetracker_employees');
+      if (storedEmployees) {
+        return JSON.parse(storedEmployees);
+      }
+    } catch (error) {
+      console.error('Error al obtener empleados:', error);
+    }
+    
+    // Datos de muestra si no hay datos en localStorage
+    return [
+      { id: 'EMP001', name: 'Carlos Rodríguez', department: 'Operaciones' },
+      { id: 'EMP002', name: 'Ana Martínez', department: 'Administración' },
+      { id: 'EMP003', name: 'Miguel Sánchez', department: 'Ventas' },
+      { id: 'EMP004', name: 'Laura Gómez', department: 'Tecnología' },
+      { id: 'EMP005', name: 'Javier López', department: 'Recursos Humanos' }
+    ];
+  };
+  
+  // Función para obtener registros de tiempo del localStorage o usar datos de muestra
+  const getTimeRecordsData = () => {
+    try {
+      const storedRecords = localStorage.getItem('timetracker_records');
+      if (storedRecords) {
+        return JSON.parse(storedRecords);
+      }
+    } catch (error) {
+      console.error('Error al obtener registros de tiempo:', error);
+    }
+    
+    // Generar datos de muestra si no hay datos en localStorage
+    return generateSampleTimeRecords();
+  };
+  
+  // Función para generar datos de muestra de registros de tiempo
+  const generateSampleTimeRecords = () => {
+    const records = [];
+    const employeeIds = ['EMP001', 'EMP002', 'EMP003', 'EMP004', 'EMP005'];
+    const clients = ['Cliente A', 'Cliente B', 'Cliente C', 'Cliente D'];
+    
+    // Generar registros para el último mes
+    const today = new Date();
+    const startDate = new Date();
+    startDate.setMonth(today.getMonth() - 1);
+    
+    // Iterar por cada día del último mes
+    for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
+      // Saltar fines de semana
+      const dayOfWeek = d.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+      
+      // Generar registros para cada empleado
+      employeeIds.forEach(empId => {
+        // 80% de probabilidad de asistencia
+        if (Math.random() < 0.8) {
+          const date = new Date(d);
+          const dateStr = date.toISOString().split('T')[0];
+          
+          // Hora de entrada (entre 8:00 y 9:30)
+          const entryHour = 8 + Math.floor(Math.random() * 1.5);
+          const entryMinute = Math.floor(Math.random() * 60);
+          const entryTime = `${entryHour.toString().padStart(2, '0')}:${entryMinute.toString().padStart(2, '0')}`;
+          
+          // Duración del trabajo (entre 7 y 9 horas)
+          const workHours = 7 + Math.random() * 2;
+          const workMinutes = Math.floor(workHours * 60);
+          
+          // Hora de salida
+          const exitHour = entryHour + Math.floor(workHours);
+          const exitMinute = entryMinute + Math.floor((workHours - Math.floor(workHours)) * 60);
+          const adjustedExitHour = exitHour + Math.floor(exitMinute / 60);
+          const adjustedExitMinute = exitMinute % 60;
+          const exitTime = `${adjustedExitHour.toString().padStart(2, '0')}:${adjustedExitMinute.toString().padStart(2, '0')}`;
+          
+          // Llegada tardía (después de las 9:00)
+          const usedEntryTolerance = entryHour >= 9 || (entryHour === 8 && entryMinute >= 30);
+          
+          // Cliente aleatorio
+          const client = clients[Math.floor(Math.random() * clients.length)];
+          
+          records.push({
+            id: `TR${Date.now().toString().slice(-6)}-${empId}`,
+            userId: empId,
+            date: dateStr,
+            entryTime,
+            exitTime,
+            client,
+            totalWorkTime: workMinutes,
+            usedEntryTolerance
+          });
+        }
+      });
+    }
+    
+    return records;
   };
   
   // Función auxiliar para calcular días laborables en un rango
@@ -420,6 +512,8 @@ export default function ReportsPage() {
               <option value="EMP001">Carlos Rodríguez</option>
               <option value="EMP002">Ana Martínez</option>
               <option value="EMP003">Miguel Sánchez</option>
+              <option value="EMP004">Laura Gómez</option>
+              <option value="EMP005">Javier López</option>
             </select>
           </div>
         </div>
