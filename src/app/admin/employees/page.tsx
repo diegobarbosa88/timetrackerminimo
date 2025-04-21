@@ -146,8 +146,9 @@ export default function EmployeesPage() {
   };
 
   const handleViewEmployee = (id) => {
-    alert(`Ver detalles del empleado con ID: ${id} - Próximamente`);
-  };
+  // En lugar de mostrar una alerta, redirigimos a la página de visualización
+  router.push(`/admin/employees/view-employee?id=${id}`);
+};
 
   const handleDeleteEmployee = (id) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este empleado?')) {
