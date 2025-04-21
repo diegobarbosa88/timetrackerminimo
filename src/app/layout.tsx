@@ -19,12 +19,13 @@ export default function RootLayout({
                 <span className="ml-2 text-sm bg-blue-500 px-2 py-1 rounded">MAGNETIC PLACE</span>
               </div>
               <nav>
-                <ul className="flex space-x-6">
-                  <li><a href="/" className="hover:underline">Inicio</a></li>
-                  <li><a href="/admin/employees" className="hover:underline">Empleados</a></li>
-                  <li><a href="/reports" className="hover:underline">Informes</a></li>
-                </ul>
-              </nav>
+  <ul className="flex space-x-6">
+    <li><a href="/" className="hover:underline">Inicio</a></li>
+    <li><a href="/dashboard" className="hover:underline">Dashboard</a></li>
+    <li><a href="/admin/employees" className="hover:underline">Empleados</a></li>
+    <li><a href="/reports" className="hover:underline">Informes</a></li>
+  </ul>
+</nav>
             </div>
           </header>
           <main className="flex-grow">
