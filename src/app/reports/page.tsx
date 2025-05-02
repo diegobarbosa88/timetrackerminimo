@@ -1,4 +1,55 @@
 
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import { useAuth } from '../hooks/useAuth'; // Importação adicionada
+import {
+    getEmployeesData,
+    getAllTimeRecordsData,
+    getUniqueClients,
+    parseDateString,
+    formatMinutesToHoursMinutes,
+    TimeRecord,
+    Employee,
+    EmployeeReportData,
+    DailyReportRecord
+} from './page_helpers';
+
+// Import Chart.js components and register necessary elements
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend,
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend
+);
+
+// Define a type for Summary data
+interface SummaryReportRecord {
+  id: string;
+  name: string;
+  department?: string;
+  workedDays: number;
+  totalHoursFormatted: string;
+  avgHoursFormatted: string;
+  totalMinutes: number;
+}
+
 // --- Componente Principal (Com Gráficos e Correção PDF) ---
 export default function ReportsPage() {
   const { user } = useAuth();
@@ -323,10 +374,6 @@ export default function ReportsPage() {
       setDownloadFormat('');
     }
   };
-
-  // Restante do componente (handleDateRangeChange, chartOptions, return JSX) permanece o mesmo...
-  // ... (O código JSX completo está no resultado anterior, omitido aqui por brevidade)
-  // ...
 
   const handleDateRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
