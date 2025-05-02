@@ -115,6 +115,7 @@ function Header() {
                     <a href="/admin/employees" className="nav-link px-3 py-2 text-sm font-medium">Empleados</a>
                   )}
                   <a href="/reports" className="nav-link px-3 py-2 text-sm font-medium">Informes</a>
+                  <a href="/folha-ponto" className="nav-link px-3 py-2 text-sm font-medium">Folha de Ponto</a>
                 </>
               )}
             </nav>
