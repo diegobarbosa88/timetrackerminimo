@@ -3,7 +3,7 @@
 
 import React from 'react';
 import './globals.css';
-import { AuthProvider, useAuth } from '../lib/auth.tsx'; // Corrigido para .tsx e importando useAuth aqui
+import { AuthProvider, useAuth } from '../lib/auth';
 
 export default function RootLayout({
   children,
