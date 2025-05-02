@@ -1,56 +1,5 @@
 
-'use client';
-
-import React, { useState, useEffect, useRef } from 'react';
-import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
-import * as XLSX from 'xlsx';
-import { useAuth } from '../hooks/useAuth';
-import {
-    getEmployeesData,
-    getAllTimeRecordsData,
-    getUniqueClients,
-    parseDateString,
-    formatMinutesToHoursMinutes,
-    TimeRecord,
-    Employee,
-    EmployeeReportData,
-    DailyReportRecord
-} from './page_helpers';
-
-// Import Chart.js components and register necessary elements
-import {
-    Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend,
-} from 'chart.js';
-import { Bar } from 'react-chartjs-2';
-
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend
-);
-
-// Define a type for Summary data
-interface SummaryReportRecord {
-  id: string;
-  name: string;
-  department?: string;
-  workedDays: number;
-  totalHoursFormatted: string;
-  avgHoursFormatted: string;
-  totalMinutes: number;
-}
-
-// --- Componente Principal (Com Gráficos) ---
+// --- Componente Principal (Com Gráficos e Correção PDF) ---
 export default function ReportsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
@@ -264,6 +213,7 @@ export default function ReportsPage() {
     }, 500);
   };
 
+  // Função de download (Com correção para PDF)
   const downloadReport = async (format: string) => {
     if (!reportGenerated || !reportData || !reportData.data || reportData.data.length === 0) {
         alert("Nenhum dado para baixar.");
@@ -317,7 +267,16 @@ export default function ReportsPage() {
                     headStyles: { fillColor: [22, 160, 133] },
                 });
             }
-            pdf.save(`${reportTitle}.pdf`);
+            // Correção: Gerar Blob e criar link para download
+            const pdfBlob = pdf.output('blob');
+            const pdfUrl = URL.createObjectURL(pdfBlob);
+            const link = document.createElement('a');
+            link.href = pdfUrl;
+            link.download = `${reportTitle}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(pdfUrl); // Limpar URL do objeto
 
         } else if (format === 'excel') {
             let ws_data: any[][] = [];
@@ -356,12 +315,18 @@ export default function ReportsPage() {
 
     } catch (error) {
       console.error(`Erro ao baixar relatório como ${format}:`, error);
-      alert(`Ocorreu um erro ao baixar o relatório como ${format}.`);
+      // O alert original já está no código, não precisa adicionar outro.
+      // A mensagem de erro genérica pode ser suficiente, ou podemos tentar ser mais específicos
+      alert(`Ocorreu um erro ao baixar o relatório como ${format}. Verifique o console para detalhes.`);
     } finally {
       setIsDownloading(false);
       setDownloadFormat('');
     }
   };
+
+  // Restante do componente (handleDateRangeChange, chartOptions, return JSX) permanece o mesmo...
+  // ... (O código JSX completo está no resultado anterior, omitido aqui por brevidade)
+  // ...
 
   const handleDateRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
