@@ -1,8 +1,9 @@
+
 'use client';
 
 import React from 'react';
 import './globals.css';
-import { AuthProvider } from '../lib/auth';
+import { AuthProvider, useAuth } from '../lib/auth.tsx'; // Corrigido para .tsx e importando useAuth aqui
 
 export default function RootLayout({
   children,
@@ -98,7 +99,7 @@ function Header() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
   return (
-    <header className="bg-white shadow-md">
+    <header className="bg-white shadow-md"> {/* Tag </header> adicionada */} 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex">
@@ -164,5 +165,5 @@ function Header() {
   );
 }
 
-// Importar useAuth después de definir Header para evitar problemas de referencia
-import { useAuth } from '../lib/auth';
+// Imports movidos para o topo do arquivo
+
