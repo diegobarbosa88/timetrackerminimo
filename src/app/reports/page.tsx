@@ -2,45 +2,76 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-// import { jsPDF } from 'jspdf';
-// import 'jspdf-autotable'; // Import jspdf-autotable
-// import * as XLSX from 'xlsx';
-// import html2canvas from 'html2canvas';
-import { useAuth } from '../hooks/useAuth'; // Ensure this import is correct and present
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
+import * as XLSX from 'xlsx';
+import { useAuth } from '../hooks/useAuth';
 import {
     getEmployeesData,
     getAllTimeRecordsData,
     getUniqueClients,
     parseDateString,
     formatMinutesToHoursMinutes,
-    TimeRecord, // Import types if needed or define them here
-    Employee,   // Import types if needed or define them here
-    EmployeeReportData, // Import types if needed or define them here
-    DailyReportRecord // Import type
-} from './page_helpers'; // Import helpers
+    TimeRecord,
+    Employee,
+    EmployeeReportData,
+    DailyReportRecord
+} from './page_helpers';
 
-// --- Componente Principal (Simplificado) ---
+// Import Chart.js components and register necessary elements
+import {
+    Chart as ChartJS,
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend,
+} from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+ChartJS.register(
+    CategoryScale,
+    LinearScale,
+    BarElement,
+    Title,
+    Tooltip,
+    Legend
+);
+
+// Define a type for Summary data
+interface SummaryReportRecord {
+  id: string;
+  name: string;
+  department?: string;
+  workedDays: number;
+  totalHoursFormatted: string;
+  avgHoursFormatted: string;
+  totalMinutes: number;
+}
+
+// --- Componente Principal (Com Gráficos) ---
 export default function ReportsPage() {
-  const { user } = useAuth(); // Hook useAuth importado
+  const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
-  // Estados Essenciais
-  const [reportType, setReportType] = useState('daily'); // Manter apenas 'daily' por enquanto?
+  const [reportType, setReportType] = useState('daily');
   const [dateRange, setDateRange] = useState('current_month');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [clientFilter, setClientFilter] = useState('all');
   const [isGenerating, setIsGenerating] = useState(false);
   const [reportGenerated, setReportGenerated] = useState(false);
   const [reportData, setReportData] = useState<any>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employees, setEmployees] = useState<Omit<Employee, 'timeRecords'>[]>([]);
   const [clients, setClients] = useState<string[]>([]);
   const [customDateRange, setCustomDateRange] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadFormat, setDownloadFormat] = useState('');
 
-  const reportRef = useRef(null); // Manter para possível uso futuro (imagem?)
+  const reportRef = useRef(null);
 
-  // Carregar funcionários, clientes e definir datas padrão
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
@@ -50,10 +81,8 @@ export default function ReportsPage() {
         setClients(uniqueClients);
 
         if (!isAdmin && user?.id) {
-          console.log("Setting employee filter for non-admin user:", user.id);
           setEmployeeFilter(user.id);
         } else {
-          console.log("Setting employee filter for admin or no user:", 'all');
           setEmployeeFilter('all');
         }
 
@@ -63,12 +92,10 @@ export default function ReportsPage() {
         setStartDate(firstDayOfMonth.toISOString().split('T')[0]);
       } catch (error) {
         console.error("Erro ao carregar dados iniciais:", error);
-        // Considerar mostrar um erro para o usuário
       }
     }
   }, [user, isAdmin]);
 
-  // Função para logar o conteúdo do localStorage
   const debugLocalStorage = () => {
     try {
       const data = localStorage.getItem("timetracker_employees");
@@ -78,29 +105,22 @@ export default function ReportsPage() {
         console.log("Parsed data:", JSON.parse(data));
       }
       console.log("--- FIM DEBUG LOCALSTORAGE ---");
-      alert("Conteúdo do localStorage 'timetracker_employees' logado no console do navegador.");
+      alert("Conteúdo do localStorage 'timetracker_employees' logado no console.");
     } catch (error) {
       console.error("Erro ao ler localStorage:", error);
-      alert("Erro ao tentar ler o localStorage. Verifique o console.");
+      alert("Erro ao tentar ler o localStorage.");
     }
   };
 
-  // Função principal para gerar dados do relatório (Simplificada)
   const generateReportData = (type: string, range: string, employeeIdFilter: string, selectedClientFilter: string, isCustomRange: boolean, customStartDateStr: string, customEndDateStr: string) => {
-    console.log("--- Iniciando generateReportData (Simplificado) ---");
-    console.log("User:", user);
-    console.log("Is Admin:", isAdmin);
-    console.log("Filtros Recebidos:", { type, range, employeeIdFilter, selectedClientFilter, isCustomRange, customStartDateStr, customEndDateStr });
+    console.log("--- Iniciando generateReportData ---");
+    console.log("Filtros:", { type, range, employeeIdFilter, selectedClientFilter, isCustomRange, customStartDateStr, customEndDateStr });
 
-    // 1. Obter todos os registros
     const allTimeRecords = getAllTimeRecordsData();
-    console.log("Todos os Registros (getAllTimeRecordsData):", allTimeRecords);
     if (!allTimeRecords || allTimeRecords.length === 0) {
-        console.log("Nenhum registro encontrado no localStorage.");
-        return { type: 'daily', data: [], startDate: '', endDate: '', employee: employeeIdFilter, client: selectedClientFilter }; // Retorna estrutura vazia
+        return { type, data: [], chartData: null, startDate: '', endDate: '', employee: employeeIdFilter, client: selectedClientFilter };
     }
 
-    // 2. Definir período de datas
     const now = new Date();
     let filterStartDate = new Date();
     let filterEndDate = new Date(now);
@@ -112,8 +132,6 @@ export default function ReportsPage() {
       switch (range) {
         case 'week': filterStartDate.setDate(now.getDate() - 7); filterStartDate.setHours(0,0,0,0); break;
         case 'month': filterStartDate.setMonth(now.getMonth() - 1); filterStartDate.setHours(0,0,0,0); break;
-        case 'quarter': filterStartDate.setMonth(now.getMonth() - 3); filterStartDate.setHours(0,0,0,0); break;
-        case 'year': filterStartDate.setFullYear(now.getFullYear() - 1); filterStartDate.setHours(0,0,0,0); break;
         case 'current_month':
         default:
           filterStartDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
@@ -122,100 +140,117 @@ export default function ReportsPage() {
       }
       if (filterStartDate > now) filterStartDate = new Date(now);
     }
-    console.log("Período de Datas:", { filterStartDate, filterEndDate });
 
-    // 3. Filtrar registros
     const filteredRecords = allTimeRecords.filter(record => {
       const recordDate = parseDateString(record.date);
-      if (!recordDate) {
-          console.warn(`Registro ignorado por data inválida: ${record.id}, ${record.date}`);
-          return false;
-      }
-
+      if (!recordDate) return false;
       const matchesDate = recordDate >= filterStartDate && recordDate <= filterEndDate;
-
-      let matchesEmployee = false;
-      if (isAdmin) {
-          matchesEmployee = employeeIdFilter === "all" || record.userId === employeeIdFilter;
-      } else {
-          matchesEmployee = record.userId === user?.id;
-          if (!user?.id) console.warn("Usuário não admin sem ID, não será possível filtrar!");
-      }
-
+      let matchesEmployee = isAdmin ? (employeeIdFilter === "all" || record.userId === employeeIdFilter) : (record.userId === user?.id);
       const matchesClient = selectedClientFilter === "all" || record.client === selectedClientFilter;
-
-      // Log detalhado da filtragem
-      // console.log(`Record ${record.id} (User: ${record.userId}, Date: ${record.date}, Client: ${record.client}) -> Date=${matchesDate}, Emp=${matchesEmployee}, Client=${matchesClient}`);
-
       return matchesDate && matchesEmployee && matchesClient;
     });
     console.log("Registros Filtrados:", filteredRecords);
 
-    // 4. Agrupar por funcionário (se necessário para a exibição)
     const allEmployeesList = getEmployeesData();
-    const employeeReportMap: Record<string, { name: string; records: DailyReportRecord[] }> = {};
+    let finalData: DailyReportRecord[] | SummaryReportRecord[] = [];
+    let chartData = null;
 
-    filteredRecords.forEach(record => {
-        const userId = record.userId;
-        if (!userId) {
-            console.warn("Registro filtrado sem userId:", record);
-            return; // Ignora registros sem userId
-        }
-
-        if (!employeeReportMap[userId]) {
-            const employee = allEmployeesList.find(emp => emp.id === userId);
-            employeeReportMap[userId] = {
-                name: employee ? employee.name : `ID: ${userId}`, // Usa nome ou ID
-                records: []
+    if (type === 'daily') {
+        const employeeReportMap: Record<string, { name: string; records: DailyReportRecord[] }> = {};
+        filteredRecords.forEach(record => {
+            const userId = record.userId;
+            if (!userId) return;
+            if (!employeeReportMap[userId]) {
+                const employee = allEmployeesList.find(emp => emp.id === userId);
+                employeeReportMap[userId] = { name: employee ? employee.name : `ID: ${userId}`, records: [] };
+            }
+            employeeReportMap[userId].records.push({
+                date: record.date,
+                entryTime: record.entryTime || record.entry,
+                exitTime: record.exitTime || record.exit,
+                totalWorkTime: record.totalWorkTime || 0,
+                client: record.client,
+                tag: record.tag,
+                comment: record.comment
+            });
+        });
+        finalData = Object.values(employeeReportMap).flatMap(data => {
+            data.records.sort((a, b) => {
+                const dateA = parseDateString(a.date);
+                const dateB = parseDateString(b.date);
+                return dateB && dateA ? dateB.getTime() - dateA.getTime() : 0;
+            });
+            return data.records.map(record => ({ ...record, employeeName: data.name }));
+        });
+    } else if (type === 'summary') {
+        const summaryMap: Record<string, { name: string; department?: string; totalMinutes: number; workedDaysSet: Set<string> }> = {};
+        filteredRecords.forEach(record => {
+            const userId = record.userId;
+            if (!userId) return;
+            if (!summaryMap[userId]) {
+                const employee = allEmployeesList.find(emp => emp.id === userId);
+                summaryMap[userId] = {
+                    name: employee ? employee.name : `ID: ${userId}`,
+                    department: employee?.department,
+                    totalMinutes: 0,
+                    workedDaysSet: new Set()
+                };
+            }
+            summaryMap[userId].totalMinutes += record.totalWorkTime || 0;
+            summaryMap[userId].workedDaysSet.add(record.date);
+        });
+        finalData = Object.entries(summaryMap).map(([userId, data]) => {
+            const workedDays = data.workedDaysSet.size;
+            const totalMinutes = data.totalMinutes;
+            return {
+                id: userId,
+                name: data.name,
+                department: data.department,
+                workedDays: workedDays,
+                totalHoursFormatted: formatMinutesToHoursMinutes(totalMinutes),
+                avgHoursFormatted: workedDays > 0 ? formatMinutesToHoursMinutes(Math.round(totalMinutes / workedDays)) : '0h 0m',
+                totalMinutes: totalMinutes
             };
-        }
-
-        employeeReportMap[userId].records.push({
-            // Mapeia os campos necessários para DailyReportRecord
-            date: record.date,
-            entryTime: record.entryTime || record.entry,
-            exitTime: record.exitTime || record.exit,
-            totalWorkTime: record.totalWorkTime || 0,
-            client: record.client,
-            tag: record.tag,
-            comment: record.comment
         });
-    });
-    console.log("Dados Agrupados por Funcionário:", employeeReportMap);
 
-    // 5. Formatar dados finais para a tabela (flat list)
-    const finalReportData = Object.entries(employeeReportMap).flatMap(([userId, data]) => {
-        // Ordena os registros de cada funcionário por data (mais recente primeiro)
-        data.records.sort((a, b) => {
-            const dateA = parseDateString(a.date);
-            const dateB = parseDateString(b.date);
-            if (!dateA || !dateB) return 0;
-            return dateB.getTime() - dateA.getTime();
-        });
-        // Adiciona o nome do funcionário a cada registro para a tabela flat
-        return data.records.map(record => ({ ...record, employeeName: data.name }));
-    });
+        // Prepare data for Chart.js
+        const labels = finalData.map(item => item.name);
+        const dataPoints = finalData.map(item => item.totalMinutes / 60); // Convert minutes to hours for the chart
 
-    console.log("Dados Finais para Tabela:", finalReportData);
+        chartData = {
+            labels,
+            datasets: [
+                {
+                    label: 'Total Horas Trabalhadas',
+                    data: dataPoints,
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)', // Blue color
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1,
+                },
+            ],
+        };
+        console.log("Chart Data:", chartData);
+    }
+
+    console.log("Dados Finais:", finalData);
 
     return {
-      type: 'daily', // Apenas tipo diário por enquanto
+      type,
       range: isCustomRange ? "custom" : range,
       employee: employeeIdFilter,
       client: selectedClientFilter,
       startDate: filterStartDate.toISOString().split("T")[0],
       endDate: filterEndDate.toISOString().split("T")[0],
       generatedAt: new Date().toISOString(),
-      data: finalReportData // Lista plana de registros
+      data: finalData,
+      chartData: chartData // Include chart data in the result
     };
   };
 
-  // Função para gerar o relatório (interface)
   const generateReport = () => {
     setIsGenerating(true);
     setReportGenerated(false);
     setReportData(null);
-
     setTimeout(() => {
       try {
         const data = generateReportData(reportType, dateRange, employeeFilter, clientFilter, customDateRange, startDate, endDate);
@@ -223,16 +258,111 @@ export default function ReportsPage() {
         setReportGenerated(true);
       } catch (error) {
         console.error("Erro ao gerar dados do relatório:", error);
-        alert("Ocorreu um erro ao gerar o relatório. Verifique o console para mais detalhes.");
+        alert("Ocorreu um erro ao gerar o relatório.");
       }
       setIsGenerating(false);
-    }, 500); // Pequeno delay para UI
+    }, 500);
   };
 
-  // Funções de download removidas/comentadas
-  // const downloadReport = async (format: string) => { ... };
+  const downloadReport = async (format: string) => {
+    if (!reportGenerated || !reportData || !reportData.data || reportData.data.length === 0) {
+        alert("Nenhum dado para baixar.");
+        return;
+    }
 
-  // Handle date range change
+    setIsDownloading(true);
+    setDownloadFormat(format);
+
+    const reportTitle = `Relatorio_${reportData.type}_${reportData.employee}_${reportData.client}_${reportData.startDate}_a_${reportData.endDate}`.replace(/[^a-zA-Z0-9_]/g, '-');
+
+    try {
+        if (format === 'pdf') {
+            const pdf = new jsPDF('p', 'pt', 'a4');
+            pdf.text(`Relatório ${reportData.type === 'daily' ? 'Diário Detalhado' : 'Resumo'}`, 40, 40);
+            pdf.setFontSize(10);
+            pdf.text(`Período: ${reportData.startDate} a ${reportData.endDate}`, 40, 55);
+            // Add more header info if needed
+
+            if (reportData.type === 'daily') {
+                (pdf as any).autoTable({
+                    head: [["Funcionário", "Data", "Entrada", "Saída", "Total", "Cliente", "Etiqueta", "Comentário"]],
+                    body: reportData.data.map((rec: any) => [
+                        rec.employeeName,
+                        rec.date,
+                        rec.entryTime,
+                        rec.exitTime,
+                        formatMinutesToHoursMinutes(rec.totalWorkTime),
+                        rec.client,
+                        rec.tag,
+                        rec.comment || ''
+                    ]),
+                    startY: 70,
+                    theme: 'grid',
+                    styles: { fontSize: 8 },
+                    headStyles: { fillColor: [22, 160, 133] }, // Example color
+                });
+            } else { // Summary
+                 (pdf as any).autoTable({
+                    head: [["Funcionário", "Departamento", "Dias Trab.", "Total Horas", "Média Diária"]],
+                    body: reportData.data.map((rec: SummaryReportRecord) => [
+                        rec.name,
+                        rec.department || '-',
+                        rec.workedDays,
+                        rec.totalHoursFormatted,
+                        rec.avgHoursFormatted
+                    ]),
+                    startY: 70,
+                    theme: 'grid',
+                    styles: { fontSize: 8 },
+                    headStyles: { fillColor: [22, 160, 133] },
+                });
+            }
+            pdf.save(`${reportTitle}.pdf`);
+
+        } else if (format === 'excel') {
+            let ws_data: any[][] = [];
+            if (reportData.type === 'daily') {
+                ws_data.push(["Funcionário", "Data", "Entrada", "Saída", "Total (fmt)", "Cliente", "Etiqueta", "Comentário"]);
+                reportData.data.forEach((rec: any) => {
+                    ws_data.push([
+                        rec.employeeName,
+                        rec.date,
+                        rec.entryTime,
+                        rec.exitTime,
+                        formatMinutesToHoursMinutes(rec.totalWorkTime),
+                        rec.client,
+                        rec.tag,
+                        rec.comment || ''
+                    ]);
+                });
+            } else { // Summary
+                ws_data.push(["Funcionário", "Departamento", "Dias Trab.", "Total Horas", "Média Diária", "Total Minutos"]);
+                reportData.data.forEach((rec: SummaryReportRecord) => {
+                    ws_data.push([
+                        rec.name,
+                        rec.department || '-',
+                        rec.workedDays,
+                        rec.totalHoursFormatted,
+                        rec.avgHoursFormatted,
+                        rec.totalMinutes
+                    ]);
+                });
+            }
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Relatorio');
+            XLSX.writeFile(wb, `${reportTitle}.xlsx`);
+        }
+
+    } catch (error) {
+      console.error(`Erro ao baixar relatório como ${format}:`, error);
+      alert(`Ocorreu um erro ao baixar o relatório como ${format}.`);
+    } finally {
+      setIsDownloading(false);
+      setDownloadFormat('');
+    }
+  };
+
   const handleDateRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     setDateRange(value);
@@ -245,14 +375,36 @@ export default function ReportsPage() {
     }
   };
 
+  // Chart options
+  const chartOptions = {
+    responsive: true,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+      },
+      title: {
+        display: true,
+        text: 'Horas Trabalhadas por Funcionário',
+      },
+    },
+    scales: {
+        y: {
+            beginAtZero: true,
+            title: {
+                display: true,
+                text: 'Horas'
+            }
+        }
+    }
+  };
+
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Informes (Simplificado)</h1>
+      <h1 className="text-2xl font-bold mb-4">Informes</h1>
 
       {/* Filtros */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 border rounded bg-gray-50">
-        {/* Tipo de Relatório (mantido, mas lógica só suporta 'daily') */}
-        {/*
+        {/* Tipo de Relatório */}
         <div>
           <label htmlFor="reportType" className="block text-sm font-medium text-gray-700 mb-1">Tipo de Informe</label>
           <select
@@ -262,10 +414,9 @@ export default function ReportsPage() {
             className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
           >
             <option value="daily">Diário Detalhado</option>
-             <option value="summary">Resumo por Funcionário</option> // Removido temporariamente
+            <option value="summary">Resumo por Funcionário</option>
           </select>
         </div>
-        */}
 
         {/* Período */}
         <div>
@@ -279,13 +430,11 @@ export default function ReportsPage() {
             <option value="current_month">Mês Atual</option>
             <option value="week">Últimos 7 dias</option>
             <option value="month">Último Mês</option>
-            {/* <option value="quarter">Último Trimestre</option> */}
-            {/* <option value="year">Último Ano</option> */}
             <option value="custom">Personalizado</option>
           </select>
         </div>
 
-        {/* Datas Personalizadas (condicional) */}
+        {/* Datas Personalizadas */}
         {customDateRange && (
           <>
             <div>
@@ -311,7 +460,7 @@ export default function ReportsPage() {
           </>
         )}
 
-        {/* Filtro Funcionário (condicional para admin) */}
+        {/* Filtro Funcionário */}
         {isAdmin && (
           <div>
             <label htmlFor="employeeFilter" className="block text-sm font-medium text-gray-700 mb-1">Funcionário</label>
@@ -322,9 +471,7 @@ export default function ReportsPage() {
               className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
             >
               <option value="all">Todos</option>
-              {employees.map(emp => (
-                <option key={emp.id} value={emp.id}>{emp.name} ({emp.id})</option>
-              ))}
+              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.id})</option>)}
             </select>
           </div>
         )}
@@ -339,9 +486,7 @@ export default function ReportsPage() {
             className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
           >
             <option value="all">Todos</option>
-            {clients.map(client => (
-              <option key={client} value={client}>{client}</option>
-            ))}
+            {clients.map(client => <option key={client} value={client}>{client}</option>)}
           </select>
         </div>
 
@@ -367,42 +512,63 @@ export default function ReportsPage() {
       {reportGenerated && reportData && (
         <div ref={reportRef} className="mt-6 p-4 border rounded bg-white shadow">
           <h2 className="text-xl font-semibold mb-4">Relatório Gerado</h2>
+          <p className="text-sm text-gray-600 mb-1">Tipo: {reportData.type === 'daily' ? 'Diário Detalhado' : 'Resumo por Funcionário'}</p>
           <p className="text-sm text-gray-600 mb-1">Período: {reportData.startDate} a {reportData.endDate}</p>
           {isAdmin && <p className="text-sm text-gray-600 mb-1">Funcionário: {reportData.employee === 'all' ? 'Todos' : employees.find(e => e.id === reportData.employee)?.name || reportData.employee}</p>}
           <p className="text-sm text-gray-600 mb-4">Cliente: {reportData.client === 'all' ? 'Todos' : reportData.client}</p>
 
-          {/* Tabela de Relatório Simplificada (Diário Detalhado) */}
-          <div className="overflow-x-auto">
+          {/* Tabela de Relatório */}
+          <div className="overflow-x-auto mb-6">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Funcionário</th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entrada</th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Saída</th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etiqueta</th>
-                  <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comentário</th>
-                </tr>
+                {reportData.type === 'daily' ? (
+                  <tr>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Funcionário</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entrada</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Saída</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etiqueta</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comentário</th>
+                  </tr>
+                ) : ( // Summary
+                  <tr>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Funcionário</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departamento</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dias Trab.</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Horas</th>
+                    <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Média Diária</th>
+                  </tr>
+                )}
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {reportData.data && reportData.data.length > 0 ? (
                   reportData.data.map((rec: any, index: number) => (
-                    <tr key={`${rec.employeeName}-${rec.date}-${index}`}>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{rec.employeeName}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.date}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.entryTime}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.exitTime}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{formatMinutesToHoursMinutes(rec.totalWorkTime)}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.client}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.tag}</td>
-                      <td className="px-4 py-2 text-sm text-gray-500">{rec.comment}</td>
-                    </tr>
+                    reportData.type === 'daily' ? (
+                      <tr key={`${rec.employeeName}-${rec.date}-${index}`}>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{rec.employeeName}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.date}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.entryTime}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.exitTime}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{formatMinutesToHoursMinutes(rec.totalWorkTime)}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.client}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.tag}</td>
+                        <td className="px-4 py-2 text-sm text-gray-500">{rec.comment || ''}</td>
+                      </tr>
+                    ) : ( // Summary
+                      <tr key={rec.id}>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">{rec.name}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.department || '-'}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.workedDays}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.totalHoursFormatted}</td>
+                        <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{rec.avgHoursFormatted}</td>
+                      </tr>
+                    )
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-4 py-4 text-center text-sm text-gray-500">
+                    <td colSpan={reportData.type === 'daily' ? 8 : 5} className="px-4 py-4 text-center text-sm text-gray-500">
                       Nenhum registro encontrado para os filtros selecionados.
                     </td>
                   </tr>
@@ -411,19 +577,38 @@ export default function ReportsPage() {
             </table>
           </div>
 
-          {/* Botões de Download Removidos */}
-          {/*
+          {/* Botões de Download */}
           <div className="mt-6 flex justify-end space-x-2">
-            <button ...>Baixar PDF</button>
-            <button ...>Baixar Excel</button>
-            <button ...>Baixar Imagem</button>
+            <button
+              onClick={() => downloadReport('pdf')}
+              disabled={isDownloading}
+              className={`inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm ${isDownloading ? 'text-gray-400 bg-gray-100' : 'text-gray-700 bg-white hover:bg-gray-50'}`}
+            >
+              {isDownloading && downloadFormat === 'pdf' ? 'Baixando PDF...' : 'Baixar PDF'}
+            </button>
+            <button
+              onClick={() => downloadReport('excel')}
+              disabled={isDownloading}
+              className={`inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm ${isDownloading ? 'text-gray-400 bg-gray-100' : 'text-gray-700 bg-white hover:bg-gray-50'}`}
+            >
+              {isDownloading && downloadFormat === 'excel' ? 'Baixando Excel...' : 'Baixar Excel'}
+            </button>
           </div>
-          */}
+
+          {/* Área para Gráficos */}
+          {reportData.type === 'summary' && reportData.chartData && (
+            <div className="mt-8 p-4 border rounded bg-gray-50">
+              <h3 className="text-lg font-semibold mb-4 text-center">Horas Trabalhadas por Funcionário</h3>
+              <div style={{ maxWidth: '600px', margin: 'auto' }}> {/* Limit chart width */}
+                <Bar options={chartOptions} data={reportData.chartData} />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {!reportGenerated && !isGenerating && (
-        <p className="text-center text-gray-500 mt-6">Selecione os filtros e clique em "Gerar Informe" para visualizar os dados.</p>
+        <p className="text-center text-gray-500 mt-6">Selecione os filtros e clique em "Gerar Informe".</p>
       )}
     </div>
   );
