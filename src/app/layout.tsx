@@ -114,8 +114,9 @@ function Header() {
                   <a href="/cronometro" className="nav-link px-3 py-2 text-sm font-medium">Cronómetro</a>
                   {user?.role === 'admin' && (
                     <>
-                      <a href="/admin/employees" className="nav-link px-3 py-2 text-sm font-medium">Empleados</a>
-                      <a href="/admin/clients" className="nav-link px-3 py-2 text-sm font-medium">Clientes</a> {/* Novo link adicionado aqui */}
+                      <a href="/admin/employees" className="nav-link px-3 py-2 text-sm font-medium">Funcionários</a>
+                      <a href="/admin/clients" className="nav-link px-3 py-2 text-sm font-medium">Clientes</a>
+                      <a href="/admin/funcoes" className="nav-link px-3 py-2 text-sm font-medium">Funções</a> {/* Link adicionado */}
                     </>
                   )}
                   <a href="/reports" className="nav-link px-3 py-2 text-sm font-medium">Informes</a>
@@ -143,7 +144,7 @@ function Header() {
                       <div className="font-medium">{user?.name}</div>
                       <div className="text-gray-500">{user?.email}</div>
                       <div className="text-xs mt-1 bg-gray-100 inline-block px-2 py-1 rounded">
-                        {user?.role === 'admin' ? 'Administrador' : 'Empleado'}
+                        {user?.role === 'admin' ? 'Administrador' : 'Funcionário'}
                       </div>
                     </div>
                     {/* <a href="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Mi Perfil</a> */}
@@ -151,14 +152,14 @@ function Header() {
                       onClick={logout}
                       className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                     >
-                      Cerrar Sesión
+                      Encerrar Sessão
                     </button>
                   </div>
                 )}
               </div>
             ) : (
               <a href="/auth/login" className="nav-link px-3 py-2 text-sm font-medium">
-                Iniciar Sesión
+                Iniciar Sessão
               </a>
             )}
           </div>

@@ -1,28 +1,37 @@
-// Datos de ejemplo para los empleados
+// Dados de exemplo para os empregados
 export const sampleEmployees = [
   {
     id: 'EMP001',
     name: 'Carlos Rodríguez',
     email: 'carlos.rodriguez@magneticplace.com',
-    department: 'Operaciones',
+    department: 'Operações',
     position: 'Técnico Senior',
     startDate: '2023-03-15',
-    status: 'active'
+    status: 'active',
+    // Exemplo de clientes e função padrão atribuídos
+    assignedClientIds: ['CLI001', 'CLI002'],
+    defaultClientId: 'CLI001',
+    assignedFuncaoIds: ['FUNC001', 'FUNC002', 'FUNC006'],
+    defaultFuncaoId: 'FUNC001'
   },
   {
     id: 'EMP002',
     name: 'Ana Martínez',
     email: 'ana.martinez@magneticplace.com',
-    department: 'Administración',
+    department: 'Administração',
     position: 'Gerente Administrativa',
     startDate: '2023-02-01',
-    status: 'active'
+    status: 'active',
+    assignedClientIds: ['CLI003', 'CLI004'],
+    defaultClientId: 'CLI003',
+    assignedFuncaoIds: ['FUNC005', 'FUNC002'],
+    defaultFuncaoId: 'FUNC005'
   },
   {
     id: 'EMP003',
     name: 'Miguel Sánchez',
     email: 'miguel.sanchez@magneticplace.com',
-    department: 'Ventas',
+    department: 'Vendas',
     position: 'Representante de Ventas',
     startDate: '2023-05-10',
     status: 'inactive'
@@ -31,23 +40,53 @@ export const sampleEmployees = [
     id: 'EMP004',
     name: 'Laura Gómez',
     email: 'laura.gomez@magneticplace.com',
-    department: 'Operaciones',
-    position: 'Analista de Operaciones',
+    department: 'Operações',
+    position: 'Analista de Operações',
     startDate: '2023-01-05',
-    status: 'active'
+    status: 'active',
+    assignedClientIds: ['CLI001', 'CLI003', 'CLI005'],
+    defaultClientId: 'CLI005',
+    assignedFuncaoIds: ['FUNC001', 'FUNC003', 'FUNC004', 'FUNC006'],
+    defaultFuncaoId: 'FUNC003'
   },
   {
     id: 'EMP005',
     name: 'Javier López',
     email: 'javier.lopez@magneticplace.com',
-    department: 'Ventas',
+    department: 'Vendas',
     position: 'Director Comercial',
     startDate: '2023-02-15',
     status: 'active'
   }
 ];
 
-// Datos de ejemplo para los registros de tiempo (ampliados con historial de 1 mes)
+// Dados de exemplo para as Funções
+export const sampleFuncoes = [
+  { id: 'FUNC001', name: 'Desenvolvimento de Software', description: 'Tarefas relacionadas à codificação e desenvolvimento de novas funcionalidades.', status: 'active' },
+  { id: 'FUNC002', name: 'Reunião com Cliente', description: 'Participação em reuniões com clientes para discussão de projetos.', status: 'active' },
+  { id: 'FUNC003', name: 'Suporte Técnico', description: 'Prestação de suporte técnico a usuários e clientes.', status: 'active' },
+  { id: 'FUNC004', name: 'Design Gráfico', description: 'Criação de interfaces, logotipos e materiais visuais.', status: 'active' },
+  { id: 'FUNC005', name: 'Administrativo', description: 'Tarefas administrativas e de gestão interna.', status: 'active' },
+  { id: 'FUNC006', name: 'Outra', description: 'Função não listada, especificar no comentário.', status: 'active' },
+  { id: 'FUNC007', name: 'Treinamento Interno', description: 'Participação ou condução de treinamentos internos.', status: 'inactive' },
+  { id: 'FUNC008', name: 'Pesquisa e Desenvolvimento', description: 'Atividades de pesquisa para inovação.', status: 'active' },
+];
+
+// Dados de exemplo para os clientes
+export const sampleClients = [
+    { id: 'CLI001', name: 'Tech Solutions Ltda', contactPerson: 'Roberto Silva', contactEmail: 'roberto@techsolutions.com', contactPhone: '(11) 98765-4321', address: 'Rua Inovação, 123, São Paulo, SP', status: 'active' },
+    { id: 'CLI002', name: 'Global Marketing Inc.', contactPerson: 'Fernanda Costa', contactEmail: 'fernanda@globalmarketing.com', contactPhone: '(21) 91234-5678', address: 'Av. Criativa, 456, Rio de Janeiro, RJ', status: 'active' },
+    { id: 'CLI003', name: 'Alpha Construções', contactPerson: 'Mariana Lima', contactEmail: 'mariana@alphaconstrucoes.com', contactPhone: '(31) 95678-1234', address: 'Alameda dos Projetos, 789, Belo Horizonte, MG', status: 'active' },
+    { id: 'CLI004', name: 'Beta Consultoria', contactPerson: 'Lucas Mendes', contactEmail: 'lucas@betaconsultoria.com', contactPhone: '(41) 93456-8765', address: 'Praça da Estratégia, 101, Curitiba, PR', status: 'inactive' },
+    { id: 'CLI005', name: 'Omega Finanças', contactPerson: 'Sofia Oliveira', contactEmail: 'sofia@omegafinancas.com', contactPhone: '(51) 98888-7777', address: 'Rodovia dos Investimentos, 202, Porto Alegre, RS', status: 'active' },
+    { id: 'CLI006', name: 'Delta Varejo', contactPerson: 'Gabriel Alves', contactEmail: 'gabriel@deltavarejo.com', contactPhone: '(61) 97777-8888', address: 'Setor Comercial, Bloco A, Loja 3, Brasília, DF', status: 'active' },
+    { id: 'CLI007', name: 'Gama Educação', contactPerson: 'Beatriz Santos', contactEmail: 'beatriz@gamaeducacao.com', contactPhone: '(71) 96666-5555', address: 'Rua do Conhecimento, 303, Salvador, BA', status: 'inactive' },
+    { id: 'CLI008', name: 'Zeta Logística', contactPerson: 'Thiago Pereira', contactEmail: 'thiago@zetalogistica.com', contactPhone: '(81) 95555-6666', address: 'Porto de Suape, Galpão 4, Recife, PE', status: 'active' },
+    { id: 'CLI009', name: 'Kappa Indústria', contactPerson: 'Larissa Ferreira', contactEmail: 'larissa@kappaindustria.com', contactPhone: '(91) 94444-3333', address: 'Distrito Industrial, Lote 5, Manaus, AM', status: 'active' },
+    { id: 'CLI010', name: 'Lambda Saúde', contactPerson: 'Rafael Souza', contactEmail: 'rafael@lambdasaude.com', contactPhone: '(19) 93333-4444', address: 'Clínica Bem Estar, Sala 6, Campinas, SP', status: 'active' }, 
+];
+
+// Dados de exemplo para os registros de tempo (ampliados com historial e funcaoId)
 export const sampleTimeRecords = [
   // Registros para Carlos Rodríguez (EMP001) - Último mes
   {
@@ -56,8 +95,10 @@ export const sampleTimeRecords = [
     date: '2024-04-20',
     startTime: '08:30',
     endTime: '17:45',
-    totalWorkTime: 555, // en minutos
-    clientTag: 'Cliente A',
+    totalWorkTime: 555, 
+    clientId: 'CLI001',
+    funcaoId: 'FUNC001', // Desenvolvimento
+    comment: 'Finalização do módulo X.',
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
@@ -68,7 +109,9 @@ export const sampleTimeRecords = [
     startTime: '08:15',
     endTime: '17:30',
     totalWorkTime: 555,
-    clientTag: 'Cliente B',
+    clientId: 'CLI002',
+    funcaoId: 'FUNC002', // Reunião
+    comment: 'Alinhamento com cliente Y.',
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
@@ -79,7 +122,8 @@ export const sampleTimeRecords = [
     startTime: '08:45',
     endTime: '18:00',
     totalWorkTime: 555,
-    clientTag: 'Cliente A',
+    clientId: 'CLI001',
+    funcaoId: 'FUNC003', // Suporte
     usedEntryTolerance: true,
     usedExitTolerance: false
   },
@@ -90,7 +134,8 @@ export const sampleTimeRecords = [
     startTime: '08:30',
     endTime: '17:30',
     totalWorkTime: 540,
-    clientTag: 'Cliente A',
+    clientId: 'CLI001',
+    funcaoId: 'FUNC001',
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
@@ -101,176 +146,14 @@ export const sampleTimeRecords = [
     startTime: '08:20',
     endTime: '17:40',
     totalWorkTime: 560,
-    clientTag: 'Cliente B',
+    clientId: 'CLI002',
+    funcaoId: 'FUNC006', // Outra
+    comment: 'Pesquisa de novas tecnologias.',
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
-  {
-    id: 'TR006',
-    userId: 'EMP001',
-    date: '2024-04-15',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR007',
-    userId: 'EMP001',
-    date: '2024-04-12',
-    startTime: '08:40',
-    endTime: '17:50',
-    totalWorkTime: 550,
-    clientTag: 'Cliente B',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR008',
-    userId: 'EMP001',
-    date: '2024-04-11',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR009',
-    userId: 'EMP001',
-    date: '2024-04-10',
-    startTime: '08:15',
-    endTime: '17:45',
-    totalWorkTime: 570,
-    clientTag: 'Cliente B',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR010',
-    userId: 'EMP001',
-    date: '2024-04-09',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR011',
-    userId: 'EMP001',
-    date: '2024-04-08',
-    startTime: '08:45',
-    endTime: '18:00',
-    totalWorkTime: 555,
-    clientTag: 'Cliente B',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR012',
-    userId: 'EMP001',
-    date: '2024-04-05',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR013',
-    userId: 'EMP001',
-    date: '2024-04-04',
-    startTime: '08:20',
-    endTime: '17:40',
-    totalWorkTime: 560,
-    clientTag: 'Cliente B',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR014',
-    userId: 'EMP001',
-    date: '2024-04-03',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR015',
-    userId: 'EMP001',
-    date: '2024-04-02',
-    startTime: '08:40',
-    endTime: '17:50',
-    totalWorkTime: 550,
-    clientTag: 'Cliente B',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR016',
-    userId: 'EMP001',
-    date: '2024-04-01',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR017',
-    userId: 'EMP001',
-    date: '2024-03-29',
-    startTime: '08:15',
-    endTime: '17:45',
-    totalWorkTime: 570,
-    clientTag: 'Cliente B',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR018',
-    userId: 'EMP001',
-    date: '2024-03-28',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR019',
-    userId: 'EMP001',
-    date: '2024-03-27',
-    startTime: '08:45',
-    endTime: '18:00',
-    totalWorkTime: 555,
-    clientTag: 'Cliente B',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR020',
-    userId: 'EMP001',
-    date: '2024-03-26',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente A',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  
+  // ... (mais registros podem ser adicionados ou adaptados similarmente)
+
   // Registros para Ana Martínez (EMP002) - Último mes
   {
     id: 'TR021',
@@ -279,7 +162,8 @@ export const sampleTimeRecords = [
     startTime: '08:30',
     endTime: '17:30',
     totalWorkTime: 540,
-    clientTag: 'Cliente C',
+    clientId: 'CLI003',
+    funcaoId: 'FUNC005', // Administrativo
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
@@ -290,7 +174,8 @@ export const sampleTimeRecords = [
     startTime: '08:30',
     endTime: '17:30',
     totalWorkTime: 540,
-    clientTag: 'Cliente C',
+    clientId: 'CLI003',
+    funcaoId: 'FUNC005',
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
@@ -301,319 +186,23 @@ export const sampleTimeRecords = [
     startTime: '08:30',
     endTime: '17:30',
     totalWorkTime: 540,
-    clientTag: 'Cliente D',
+    clientId: 'CLI004',
+    funcaoId: 'FUNC002', // Reunião
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
-  {
-    id: 'TR024',
-    userId: 'EMP002',
-    date: '2024-04-17',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR025',
-    userId: 'EMP002',
-    date: '2024-04-16',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR026',
-    userId: 'EMP002',
-    date: '2024-04-15',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR027',
-    userId: 'EMP002',
-    date: '2024-04-12',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR028',
-    userId: 'EMP002',
-    date: '2024-04-11',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR029',
-    userId: 'EMP002',
-    date: '2024-04-10',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR030',
-    userId: 'EMP002',
-    date: '2024-04-09',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR031',
-    userId: 'EMP002',
-    date: '2024-04-08',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR032',
-    userId: 'EMP002',
-    date: '2024-04-05',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR033',
-    userId: 'EMP002',
-    date: '2024-04-04',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR034',
-    userId: 'EMP002',
-    date: '2024-04-03',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR035',
-    userId: 'EMP002',
-    date: '2024-04-02',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR036',
-    userId: 'EMP002',
-    date: '2024-04-01',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR037',
-    userId: 'EMP002',
-    date: '2024-03-29',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR038',
-    userId: 'EMP002',
-    date: '2024-03-28',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR039',
-    userId: 'EMP002',
-    date: '2024-03-27',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente D',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR040',
-    userId: 'EMP002',
-    date: '2024-03-26',
-    startTime: '08:30',
-    endTime: '17:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente C',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  
-  // Registros para Miguel Sánchez (EMP003) - Último mes (menos días porque está inactivo)
-  {
-    id: 'TR041',
-    userId: 'EMP003',
-    date: '2024-04-10',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente E',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR042',
-    userId: 'EMP003',
-    date: '2024-04-09',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente F',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR043',
-    userId: 'EMP003',
-    date: '2024-04-08',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente E',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR044',
-    userId: 'EMP003',
-    date: '2024-04-05',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente F',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR045',
-    userId: 'EMP003',
-    date: '2024-04-04',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente E',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR046',
-    userId: 'EMP003',
-    date: '2024-04-03',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente F',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR047',
-    userId: 'EMP003',
-    date: '2024-04-02',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente E',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR048',
-    userId: 'EMP003',
-    date: '2024-04-01',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente F',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR049',
-    userId: 'EMP003',
-    date: '2024-03-29',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente E',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR050',
-    userId: 'EMP003',
-    date: '2024-03-28',
-    startTime: '09:00',
-    endTime: '18:00',
-    totalWorkTime: 540,
-    clientTag: 'Cliente F',
-    usedEntryTolerance: true,
-    usedExitTolerance: false
-  },
-  
-  // Registros para Laura Gómez (EMP004) - Último mes
-  {
+  // ... (mais registros)
+
+  // Registros para Laura Gómez (EMP004)
+   {
     id: 'TR051',
     userId: 'EMP004',
     date: '2024-04-20',
     startTime: '08:00',
     endTime: '16:30',
     totalWorkTime: 510,
-    clientTag: 'Cliente G',
+    clientId: 'CLI005',
+    funcaoId: 'FUNC004', // Design
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
@@ -624,7 +213,8 @@ export const sampleTimeRecords = [
     startTime: '08:00',
     endTime: '16:30',
     totalWorkTime: 510,
-    clientTag: 'Cliente G',
+    clientId: 'CLI001',
+    funcaoId: 'FUNC001', // Desenvolvimento
     usedEntryTolerance: false,
     usedExitTolerance: false
   },
@@ -635,501 +225,64 @@ export const sampleTimeRecords = [
     startTime: '08:00',
     endTime: '16:30',
     totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR054',
-    userId: 'EMP004',
-    date: '2024-04-17',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR055',
-    userId: 'EMP004',
-    date: '2024-04-16',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR056',
-    userId: 'EMP004',
-    date: '2024-04-15',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR057',
-    userId: 'EMP004',
-    date: '2024-04-12',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR058',
-    userId: 'EMP004',
-    date: '2024-04-11',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR059',
-    userId: 'EMP004',
-    date: '2024-04-10',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR060',
-    userId: 'EMP004',
-    date: '2024-04-09',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR061',
-    userId: 'EMP004',
-    date: '2024-04-08',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR062',
-    userId: 'EMP004',
-    date: '2024-04-05',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR063',
-    userId: 'EMP004',
-    date: '2024-04-04',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR064',
-    userId: 'EMP004',
-    date: '2024-04-03',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR065',
-    userId: 'EMP004',
-    date: '2024-04-02',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR066',
-    userId: 'EMP004',
-    date: '2024-04-01',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR067',
-    userId: 'EMP004',
-    date: '2024-03-29',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR068',
-    userId: 'EMP004',
-    date: '2024-03-28',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR069',
-    userId: 'EMP004',
-    date: '2024-03-27',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente H',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR070',
-    userId: 'EMP004',
-    date: '2024-03-26',
-    startTime: '08:00',
-    endTime: '16:30',
-    totalWorkTime: 510,
-    clientTag: 'Cliente G',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  
-  // Registros para Javier López (EMP005) - Último mes
-  {
-    id: 'TR071',
-    userId: 'EMP005',
-    date: '2024-04-20',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR072',
-    userId: 'EMP005',
-    date: '2024-04-19',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR073',
-    userId: 'EMP005',
-    date: '2024-04-18',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR074',
-    userId: 'EMP005',
-    date: '2024-04-17',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR075',
-    userId: 'EMP005',
-    date: '2024-04-16',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR076',
-    userId: 'EMP005',
-    date: '2024-04-15',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR077',
-    userId: 'EMP005',
-    date: '2024-04-12',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR078',
-    userId: 'EMP005',
-    date: '2024-04-11',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR079',
-    userId: 'EMP005',
-    date: '2024-04-10',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR080',
-    userId: 'EMP005',
-    date: '2024-04-09',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR081',
-    userId: 'EMP005',
-    date: '2024-04-08',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR082',
-    userId: 'EMP005',
-    date: '2024-04-05',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR083',
-    userId: 'EMP005',
-    date: '2024-04-04',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR084',
-    userId: 'EMP005',
-    date: '2024-04-03',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR085',
-    userId: 'EMP005',
-    date: '2024-04-02',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR086',
-    userId: 'EMP005',
-    date: '2024-04-01',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR087',
-    userId: 'EMP005',
-    date: '2024-03-29',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR088',
-    userId: 'EMP005',
-    date: '2024-03-28',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR089',
-    userId: 'EMP005',
-    date: '2024-03-27',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente I',
-    usedEntryTolerance: false,
-    usedExitTolerance: false
-  },
-  {
-    id: 'TR090',
-    userId: 'EMP005',
-    date: '2024-03-26',
-    startTime: '09:30',
-    endTime: '18:30',
-    totalWorkTime: 540,
-    clientTag: 'Cliente J',
+    clientId: 'CLI003',
+    funcaoId: 'FUNC006', // Outra
+    comment: 'Organização de arquivos de projeto.',
     usedEntryTolerance: false,
     usedExitTolerance: false
   }
+  // ... (mais registros)
 ];
 
-// Función para obtener clientes únicos
-export function getUniqueClients() {
-  const clients = sampleTimeRecords.map(record => record.clientTag).filter(Boolean);
-  return [...new Set(clients)];
-}
-
-// Función para guardar un nuevo empleado
-export function saveEmployee(employeeData) {
-  // Obtener empleados existentes del localStorage o usar el array de muestra
-  let employees = [];
-  try {
-    const storedEmployees = localStorage.getItem('employees');
-    employees = storedEmployees ? JSON.parse(storedEmployees) : [...sampleEmployees];
-  } catch (error) {
-    console.error('Error al obtener empleados:', error);
-    employees = [...sampleEmployees];
-  }
-  
-  // Generar ID único para el nuevo empleado
-  const lastId = employees.length > 0 
-    ? parseInt(employees[employees.length - 1].id.replace('EMP', '')) 
-    : 0;
-  const newId = `EMP${String(lastId + 1).padStart(3, '0')}`;
-  
-  // Crear nuevo empleado
-  const newEmployee = {
-    id: newId,
-    name: employeeData.name,
-    email: employeeData.email,
-    department: employeeData.department,
-    position: employeeData.position,
-    startDate: employeeData.startDate,
-    status: 'active'
-  };
-  
-  // Añadir el nuevo empleado al array
-  employees.push(newEmployee);
-  
-  // Guardar en localStorage
-  try {
-    localStorage.setItem('employees', JSON.stringify(employees));
-    return { success: true, employee: newEmployee };
-  } catch (error) {
-    console.error('Error al guardar empleado:', error);
-    return { success: false, error: 'Error al guardar empleado' };
+// Função para inicializar o localStorage com dados de exemplo, se não existirem
+export function initializeSampleData() {
+  if (typeof window !== 'undefined') {
+    if (!localStorage.getItem('timetracker_employees')) {
+      // Adicionar timeRecords aos employees
+      const employeesWithRecords = sampleEmployees.map(emp => {
+        return {
+          ...emp,
+          timeRecords: sampleTimeRecords.filter(record => record.userId === emp.id)
+        };
+      });
+      localStorage.setItem('timetracker_employees', JSON.stringify(employeesWithRecords));
+    }
+    if (!localStorage.getItem('timetracker_clients')) {
+      localStorage.setItem('timetracker_clients', JSON.stringify(sampleClients));
+    }
+    if (!localStorage.getItem('timetracker_funcoes')) {
+      localStorage.setItem('timetracker_funcoes', JSON.stringify(sampleFuncoes));
+    }
+     // Adicionar um usuário admin se não existir
+    const storedUsers = localStorage.getItem('timetracker_users');
+    let users = storedUsers ? JSON.parse(storedUsers) : [];
+    const adminExists = users.some((user: any) => user.email === 'admin@magneticplace.com');
+    if (!adminExists) {
+        users.push({
+            id: 'admin-user-01',
+            name: 'Admin MagneticPlace',
+            email: 'admin@magneticplace.com',
+            password: 'admin123', // Em um app real, isso seria hasheado
+            role: 'admin'
+        });
+        localStorage.setItem('timetracker_users', JSON.stringify(users));
+    }
   }
 }
-
-// Función para obtener todos los empleados
-export function getEmployees() {
-  try {
-    const storedEmployees = localStorage.getItem('employees');
-    return storedEmployees ? JSON.parse(storedEmployees) : sampleEmployees;
-  } catch (error) {
-    console.error('Error al obtener empleados:', error);
-    return sampleEmployees;
-  }
-}
-
-// Definición de tipos para TypeScript usando JSDoc
-/**
- * @typedef {Object} TimeRecord
- * @property {string} id - Identificador único del registro
- * @property {string} userId - ID del empleado
- * @property {string} date - Fecha del registro (formato YYYY-MM-DD)
- * @property {string} startTime - Hora de entrada
- * @property {string} [endTime] - Hora de salida (opcional)
- * @property {number} [totalWorkTime] - Tiempo total trabajado en minutos (opcional)
- * @property {string} [clientTag] - Etiqueta del cliente (opcional)
- * @property {boolean} usedEntryTolerance - Si se usó tolerancia en la entrada
- * @property {boolean} usedExitTolerance - Si se usó tolerancia en la salida
- */
 
 /**
- * @typedef {Object} Employee
- * @property {string} id - Identificador único del empleado
- * @property {string} name - Nombre completo del empleado
- * @property {string} email - Correo electrónico del empleado
- * @property {string} department - Departamento al que pertenece
- * @property {string} position - Cargo o posición
- * @property {string} startDate - Fecha de inicio (formato YYYY-MM-DD)
- * @property {string} status - Estado (active/inactive)
+ * @typedef {object} TimeRecord
+ * @property {string} id - Identificador único del registro de tiempo
+ * @property {string} userId - Identificador del empleado
+ * @property {string} date - Fecha del registro (DD/MM/YYYY)
+ * @property {string} startTime - Hora de inicio (HH:MM)
+ * @property {string} [endTime] - Hora de fin (HH:MM)
+ * @property {number} [totalWorkTime] - Tiempo total trabajado en minutos
+ * @property {string} [clientId] - Identificador del cliente
+ * @property {string} [funcaoId] - Identificador da Função (anteriormente clientTag ou customTag)
+ * @property {string} [status] - Estado del registro (ej: Completo, Manual, Em Andamento)
+ * @property {string} [comment] - Comentario adicional (pode incluir detalhe da função 'Outra')
+ * @property {boolean} usedEntryTolerance - Indica si se usó la tolerancia de entrada
+ * @property {boolean} usedExitTolerance - Indica si se usó la tolerancia de salida
  */
+

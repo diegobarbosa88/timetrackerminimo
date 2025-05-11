@@ -3,24 +3,26 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Client, Employee } from '../../../../lib/time-tracking-models'; // Ajuste o caminho conforme necessário
+import type { Client, Employee, Funcao } from '../../../../lib/time-tracking-models'; // Ajuste o caminho
 
 export default function AddEmployeePage() {
   const router = useRouter();
-  const [formData, setFormData] = useState<Partial<Employee & { password_confirm?: string, assignedClientIds?: string[], defaultClientId?: string }>>({
+  const [formData, setFormData] = useState<Partial<Employee & { password_confirm?: string, assignedClientIds?: string[], defaultClientId?: string, assignedFuncaoIds?: string[], defaultFuncaoId?: string }>>({
     name: '',
     email: '',
     department: '',
     position: '',
     startDate: '',
-    // Removidos phone, address, emergencyContact, notes para simplificar, conforme standalone
     password: '',
     password_confirm: '',
     status: 'active',
     assignedClientIds: [],
-    defaultClientId: ''
+    defaultClientId: '',
+    assignedFuncaoIds: [], // Novo
+    defaultFuncaoId: ''    // Novo
   });
   const [clients, setClients] = useState<Client[]>([]);
+  const [funcoes, setFuncoes] = useState<Funcao[]>([]); // Novo
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,28 +38,56 @@ export default function AddEmployeePage() {
         setClients([]);
       }
     }
+    // Carregar funções do localStorage // Novo
+    const storedFuncoes = localStorage.getItem('timetracker_funcoes');
+    if (storedFuncoes) {
+      try {
+        const parsedFuncoes: Funcao[] = JSON.parse(storedFuncoes);
+        setFuncoes(parsedFuncoes.filter(funcao => funcao.status === 'active'));
+      } catch (e) {
+        console.error("Erro ao carregar funções do localStorage:", e);
+        setFuncoes([]);
+      }
+    }
   }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { id, value, type } = e.target;
+    const { id, value, type, name } = e.target;
     if (type === 'checkbox') {
       const { checked } = e.target as HTMLInputElement;
-      setFormData(prevData => {
-        const existingAssignedClientIds = prevData.assignedClientIds || [];
-        let newAssignedClientIds;
-        if (checked) {
-          newAssignedClientIds = [...existingAssignedClientIds, value];
-        } else {
-          newAssignedClientIds = existingAssignedClientIds.filter(clientId => clientId !== value);
-        }
-        // Se o cliente padrão foi desmarcado, resetar o cliente padrão
-        const newDefaultClientId = newAssignedClientIds.includes(prevData.defaultClientId || '') ? prevData.defaultClientId : '';
-        return {
-          ...prevData,
-          assignedClientIds: newAssignedClientIds,
-          defaultClientId: newDefaultClientId,
-        };
-      });
+      if (name === 'assignedClientIds') {
+        setFormData(prevData => {
+          const existingAssignedClientIds = prevData.assignedClientIds || [];
+          let newAssignedClientIds;
+          if (checked) {
+            newAssignedClientIds = [...existingAssignedClientIds, value];
+          } else {
+            newAssignedClientIds = existingAssignedClientIds.filter(clientId => clientId !== value);
+          }
+          const newDefaultClientId = newAssignedClientIds.includes(prevData.defaultClientId || '') ? prevData.defaultClientId : '';
+          return {
+            ...prevData,
+            assignedClientIds: newAssignedClientIds,
+            defaultClientId: newDefaultClientId,
+          };
+        });
+      } else if (name === 'assignedFuncaoIds') { // Novo
+        setFormData(prevData => {
+          const existingAssignedFuncaoIds = prevData.assignedFuncaoIds || [];
+          let newAssignedFuncaoIds;
+          if (checked) {
+            newAssignedFuncaoIds = [...existingAssignedFuncaoIds, value];
+          } else {
+            newAssignedFuncaoIds = existingAssignedFuncaoIds.filter(funcaoId => funcaoId !== value);
+          }
+          const newDefaultFuncaoId = newAssignedFuncaoIds.includes(prevData.defaultFuncaoId || '') ? prevData.defaultFuncaoId : '';
+          return {
+            ...prevData,
+            assignedFuncaoIds: newAssignedFuncaoIds,
+            defaultFuncaoId: newDefaultFuncaoId,
+          };
+        });
+      }
     } else {
       setFormData(prevData => ({
         ...prevData,
@@ -96,6 +126,8 @@ export default function AddEmployeePage() {
         password: formData.password,
         assignedClientIds: formData.assignedClientIds || [],
         defaultClientId: formData.defaultClientId || '',
+        assignedFuncaoIds: formData.assignedFuncaoIds || [], // Novo
+        defaultFuncaoId: formData.defaultFuncaoId || '',   // Novo
         timeRecords: []
       };
 
@@ -117,6 +149,10 @@ export default function AddEmployeePage() {
 
   const assignedClientsForDefaultSelection = clients.filter(client => 
     formData.assignedClientIds?.includes(client.id)
+  );
+
+  const assignedFuncoesForDefaultSelection = funcoes.filter(funcao => // Novo
+    formData.assignedFuncaoIds?.includes(funcao.id)
   );
 
   return (
@@ -267,6 +303,7 @@ export default function AddEmployeePage() {
             <p className="text-xs text-gray-500 mt-2">Esta senha permitirá ao funcionário iniciar sessão e registrar suas horas.</p>
           </div>
 
+          {/* Seção de Atribuição de Clientes - Mantida como estava */}
           <div>
             <h2 className="text-2xl font-semibold mb-6 text-gray-700 border-b pb-3">Atribuição de Clientes</h2>
             <div className="space-y-4">
@@ -278,7 +315,7 @@ export default function AddEmployeePage() {
                                 <div key={client.id} className="flex items-center">
                                     <input
                                         id={`client-${client.id}`}
-                                        name="assignedClientIds"
+                                        name="assignedClientIds" // Mantido para lógica de clientes
                                         type="checkbox"
                                         value={client.id}
                                         checked={formData.assignedClientIds?.includes(client.id)}
@@ -314,6 +351,59 @@ export default function AddEmployeePage() {
                             ))}
                         </select>
                         <p className="text-xs text-gray-500 mt-1">Este cliente será pré-selecionado ao registrar horas.</p>
+                    </div>
+                )}
+            </div>
+          </div>
+
+          {/* Nova Seção de Atribuição de Funções */}
+          <div>
+            <h2 className="text-2xl font-semibold mb-6 text-gray-700 border-b pb-3">Atribuição de Funções</h2>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Funções Associadas</label>
+                    {funcoes.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-60 overflow-y-auto p-2 border rounded-md">
+                            {funcoes.map(funcao => (
+                                <div key={funcao.id} className="flex items-center">
+                                    <input
+                                        id={`funcao-${funcao.id}`}
+                                        name="assignedFuncaoIds" // Novo name para lógica de funções
+                                        type="checkbox"
+                                        value={funcao.id}
+                                        checked={formData.assignedFuncaoIds?.includes(funcao.id)}
+                                        onChange={handleChange}
+                                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                    />
+                                    <label htmlFor={`funcao-${funcao.id}`} className="ml-2 block text-sm text-gray-900">
+                                        {funcao.name}
+                                    </label>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-sm text-gray-500">Nenhuma função ativa encontrada. Adicione funções na seção 'Funções' para poder associá-las.</p>
+                    )}
+                </div>
+
+                {formData.assignedFuncaoIds && formData.assignedFuncaoIds.length > 0 && (
+                    <div>
+                        <label htmlFor="defaultFuncaoId" className="block text-sm font-medium text-gray-700 mb-1">Função Padrão</label>
+                        <select
+                            id="defaultFuncaoId"
+                            name="defaultFuncaoId"
+                            value={formData.defaultFuncaoId}
+                            onChange={handleChange}
+                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                        >
+                            <option value="">Nenhuma função padrão</option>
+                            {assignedFuncoesForDefaultSelection.map(funcao => (
+                                <option key={funcao.id} value={funcao.id}>
+                                    {funcao.name}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Esta função será pré-selecionada ao registrar horas.</p>
                     </div>
                 )}
             </div>
