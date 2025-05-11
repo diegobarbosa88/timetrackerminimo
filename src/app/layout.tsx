@@ -99,7 +99,7 @@ function Header() {
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
 
   return (
-    <header className="bg-white shadow-md"> {/* Tag </header> adicionada */} 
+    <header className="bg-white shadow-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex">
@@ -113,7 +113,10 @@ function Header() {
                   <a href="/dashboard" className="nav-link px-3 py-2 text-sm font-medium">Dashboard</a>
                   <a href="/cronometro" className="nav-link px-3 py-2 text-sm font-medium">Cronómetro</a>
                   {user?.role === 'admin' && (
-                    <a href="/admin/employees" className="nav-link px-3 py-2 text-sm font-medium">Empleados</a>
+                    <>
+                      <a href="/admin/employees" className="nav-link px-3 py-2 text-sm font-medium">Empleados</a>
+                      <a href="/admin/clients" className="nav-link px-3 py-2 text-sm font-medium">Clientes</a> {/* Novo link adicionado aqui */}
+                    </>
                   )}
                   <a href="/reports" className="nav-link px-3 py-2 text-sm font-medium">Informes</a>
                   <a href="/folha-ponto" className="nav-link px-3 py-2 text-sm font-medium">Folha de Ponto</a>
@@ -143,7 +146,7 @@ function Header() {
                         {user?.role === 'admin' ? 'Administrador' : 'Empleado'}
                       </div>
                     </div>
-                    <a href="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Mi Perfil</a>
+                    {/* <a href="/profile" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Mi Perfil</a> */}
                     <button 
                       onClick={logout}
                       className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -164,6 +167,4 @@ function Header() {
     </header>
   );
 }
-
-// Imports movidos para o topo do arquivo
 
