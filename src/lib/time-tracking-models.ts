@@ -5,12 +5,15 @@ export interface TimeTrackingModels {
 export interface TimeRecord {
   id: string;
   userId: string;
-  date: string;
-  startTime: string;
-  endTime?: string;
-  totalWorkTime?: number;
-  clientTag?: string; // Será substituído/atualizado para clientId
-  clientId?: string; // Novo campo para referenciar o ID do cliente
+  date: string; // Formato DD/MM/YYYY
+  startTime: string; // Formato HH:MM
+  endTime?: string; // Formato HH:MM
+  totalWorkTime?: number; // Em minutos
+  clientId?: string; 
+  clientTag?: string; // Etiqueta/tarefa específica (ex: Desenvolvimento, Design, Outro)
+  customTag?: string; // Usado se clientTag for 'Outro', para a etiqueta específica do usuário
+  status?: 'Completo (Cron.)' | 'Manual' | 'Em Andamento' | string; 
+  comment?: string;
   usedEntryTolerance: boolean;
   usedExitTolerance: boolean;
 }
@@ -23,18 +26,19 @@ export interface Employee {
   position: string;
   startDate: string;
   status: 'active' | 'inactive';
-  // Adicionar um campo para senha se não existir, ou confirmar como é gerenciada
-  password?: string; // Exemplo, verificar estrutura de auth.tsx
-  timeRecords?: TimeRecord[]; // Opcional, se for carregar junto
+  password?: string; 
+  timeRecords?: TimeRecord[];
+  assignedClientIds?: string[]; 
+  defaultClientId?: string; 
 }
 
 export interface Client {
-  id: string; // Ex: CLI001
-  name: string; // Obrigatório
+  id: string; 
+  name: string; 
   contactPerson?: string;
   contactEmail?: string;
   contactPhone?: string;
   address?: string;
-  status: 'active' | 'inactive'; // Ativo ou Inativo
+  status: 'active' | 'inactive';
 }
 

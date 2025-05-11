@@ -1,295 +1,315 @@
+
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, FormEvent, ChangeEvent } from 'react';
 import { useAuth } from '../../lib/auth';
+import type { TimeRecord as ModelTimeRecord, Employee as ModelEmployee, Client as ModelClient } from '../../lib/time-tracking-models';
+
+// Tipos
+interface TimeRecord extends ModelTimeRecord {}
+interface Employee extends ModelEmployee {}
+interface Client extends ModelClient {}
+
+interface CurrentTimeRecordData {
+    userId?: string;
+    userName?: string;
+    clientId: string;
+    tag: string;
+    startTime: string; // ISO string
+    date: string; // DD/MM/YYYY
+}
 
 export default function CronometroPage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const [currentUserData, setCurrentUserData] = useState<Employee | null>(null);
   const [currentTime, setCurrentTime] = useState('');
   const [currentDate, setCurrentDate] = useState('');
   const [timer, setTimer] = useState('00:00:00');
   const [isRunning, setIsRunning] = useState(false);
-  const [startTime, setStartTime] = useState(null);
+  const [startTimeForCalc, setStartTimeForCalc] = useState<number | null>(null); // Usado para cálculo do tempo decorrido
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [selectedClient, setSelectedClient] = useState('MAGNETIC PLACE');
+  
+  const [allClients, setAllClients] = useState<Client[]>([]);
+  const [availableClientsForTimer, setAvailableClientsForTimer] = useState<Client[]>([]);
+
+  // Estado para cronômetro automático
+  const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [customTag, setCustomTag] = useState('');
   const [showCustomTag, setShowCustomTag] = useState(false);
 
   // Estado para registro manual
-  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]); // Data no formato YYYY-MM-DD
-  const [manualStartTime, setManualStartTime] = useState(''); // Hora de início HH:MM
-  const [manualEndTime, setManualEndTime] = useState(''); // Hora de fim HH:MM
-  const [manualClient, setManualClient] = useState('MAGNETIC PLACE');
+  const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
+  const [manualStartTime, setManualStartTime] = useState('');
+  const [manualEndTime, setManualEndTime] = useState('');
+  const [manualClientId, setManualClientIdState] = useState(''); // Renomeado para evitar conflito
   const [manualTag, setManualTag] = useState('');
   const [manualCustomTag, setManualCustomTag] = useState('');
   const [showManualCustomTag, setShowManualCustomTag] = useState(false);
 
-  // Lista de clientes
-  const clients = [
-    'MAGNETIC PLACE',
-    'Cliente A',
-    'Cliente B',
-    'Cliente C'
-  ];
+  const tags = ['Desenvolvimento', 'Design', 'Reunião', 'Suporte', 'Administrativo', 'Outro'];
 
-  // Lista de etiquetas predefinidas
-  const tags = [
-    'Desenvolvimento',
-    'Design',
-    'Reunião',
-    'Suporte',
-    'Administrativo',
-    'Outro'
-  ];
-
-  // Atualizar hora e data atual
+  // Carregar dados iniciais (clientes, dados do usuário, registro em andamento)
   useEffect(() => {
-    const updateDateTime = () => {
-      const now = new Date();
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      setCurrentTime(`${hours}:${minutes}:${seconds}`);
+    if (authLoading) return;
 
-      const days = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
-      const months = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-      const dayOfWeek = days[now.getDay()];
-      const dayOfMonth = now.getDate();
-      const month = months[now.getMonth()];
-      const year = now.getFullYear();
-      setCurrentDate(`Hoje é ${dayOfWeek}, ${dayOfMonth} de ${month} de ${year}`);
+    try {
+      const storedClients = localStorage.getItem('timetracker_clients');
+      const activeClients = storedClients ? (JSON.parse(storedClients) as Client[]).filter(c => c.status === 'active') : [];
+      setAllClients(activeClients);
+
+      if (user?.id) {
+        const storedEmployees = localStorage.getItem('timetracker_employees');
+        if (storedEmployees) {
+          const employees: Employee[] = JSON.parse(storedEmployees);
+          const foundUser = employees.find(emp => emp.id === user.id);
+          if (foundUser) {
+            setCurrentUserData(foundUser);
+            // Determinar clientes disponíveis
+            let userSpecificClients = activeClients;
+            if (user.role !== 'admin' && foundUser.assignedClientIds && foundUser.assignedClientIds.length > 0) {
+              userSpecificClients = activeClients.filter(client => foundUser.assignedClientIds?.includes(client.id));
+            }
+            setAvailableClientsForTimer(userSpecificClients);
+
+            const defaultClientForUser = foundUser.defaultClientId || (userSpecificClients.length > 0 ? userSpecificClients[0].id : '');
+            setSelectedClientId(defaultClientForUser);
+            setManualClientIdState(defaultClientForUser);
+          } else {
+             setAvailableClientsForTimer(activeClients); // Usuário não encontrado na lista de funcionários, mostra todos ativos
+             if (activeClients.length > 0) {
+                setSelectedClientId(activeClients[0].id);
+                setManualClientIdState(activeClients[0].id);
+             }
+          }
+        }
+      } else {
+        // Usuário não logado ou sem ID, mostrar todos os clientes ativos
+        setAvailableClientsForTimer(activeClients);
+        if (activeClients.length > 0) {
+            setSelectedClientId(activeClients[0].id);
+            setManualClientIdState(activeClients[0].id);
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao carregar dados iniciais do cronômetro:', error);
+    }
+
+    // Verificar registro em andamento
+    const savedRecordJson = localStorage.getItem('currentTimeRecord');
+    if (savedRecordJson) {
+      try {
+        const record: CurrentTimeRecordData = JSON.parse(savedRecordJson);
+        if (record.userId === user?.id) { // Garante que o registro é do usuário atual
+            const savedStartTimeEpoch = new Date(record.startTime).getTime();
+            const nowEpoch = Date.now();
+            const currentElapsedTime = nowEpoch - savedStartTimeEpoch;
+            
+            setSelectedClientId(record.clientId);
+            if (record.tag) {
+                if (tags.includes(record.tag)) {
+                    setSelectedTag(record.tag);
+                    setShowCustomTag(false);
+                } else {
+                    setSelectedTag('Outro');
+                    setCustomTag(record.tag);
+                    setShowCustomTag(true);
+                }
+            }
+            setStartTimeForCalc(nowEpoch); // Inicia a base de cálculo do tempo a partir de agora
+            setElapsedTime(currentElapsedTime); // Define o tempo já decorrido
+            setIsRunning(true);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar registro em andamento:', error);
+        localStorage.removeItem('currentTimeRecord');
+      }
+    }
+  }, [user, authLoading]);
+
+  // Atualizar hora e data atual (display)
+  useEffect(() => {
+    const updateDateTimeDisplay = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleTimeString('pt-BR'));
+      setCurrentDate(`Hoje é ${now.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`);
     };
-    updateDateTime();
-    const interval = setInterval(updateDateTime, 1000);
+    updateDateTimeDisplay();
+    const interval = setInterval(updateDateTimeDisplay, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Manejar el cronómetro automático
+  // Lógica do cronômetro em execução
   useEffect(() => {
-    let intervalId;
-    if (isRunning) {
+    let intervalId: NodeJS.Timeout;
+    if (isRunning && startTimeForCalc) {
       intervalId = setInterval(() => {
         const now = Date.now();
-        const newElapsedTime = elapsedTime + (now - startTime);
-        setStartTime(now);
+        const newElapsedTime = elapsedTime + (now - (startTimeForCalc || now)); // Adiciona o tempo desde a última atualização
+        setStartTimeForCalc(now); // Atualiza o ponto de início para o próximo intervalo
         setElapsedTime(newElapsedTime);
+        
         const totalSeconds = Math.floor(newElapsedTime / 1000);
         const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
         const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-        const seconds = String(totalSeconds % 60).padStart(2, '0');
-        setTimer(`${hours}:${minutes}:${seconds}`);
+        const secondsDisplay = String(totalSeconds % 60).padStart(2, '0');
+        setTimer(`${hours}:${minutes}:${secondsDisplay}`);
       }, 1000);
     }
     return () => clearInterval(intervalId);
-  }, [isRunning, startTime, elapsedTime]);
+  }, [isRunning, startTimeForCalc, elapsedTime]);
 
-  // Iniciar ou pausar o cronômetro automático
   const toggleTimer = () => {
-    if (!isRunning) {
-      if (showCustomTag && !customTag && selectedTag === 'Outro') {
-        alert('Por favor, insira uma etiqueta personalizada');
+    if (!user?.id) {
+        alert("Usuário não identificado. Não é possível iniciar o cronômetro.");
         return;
-      }
+    }
+    if (!isRunning) {
+      if (!selectedClientId) { alert('Por favor, selecione um cliente.'); return; }
+      if (!selectedTag) { alert('Por favor, selecione uma etiqueta.'); return; }
+      if (selectedTag === 'Outro' && !customTag) { alert('Por favor, insira uma etiqueta personalizada.'); return; }
+      
       const finalTag = selectedTag === 'Outro' ? customTag : selectedTag;
-      setStartTime(Date.now());
+      const recordStartTime = new Date(); // Momento exato do início
+
+      setStartTimeForCalc(recordStartTime.getTime());
+      setElapsedTime(0); // Reseta o tempo decorrido
       setIsRunning(true);
-      const startRecord = {
-        userId: user?.id,
-        userName: user?.name,
-        clientId: selectedClient,
+      setTimer('00:00:00');
+
+      const startRecordData: CurrentTimeRecordData = {
+        userId: user.id,
+        userName: user.name,
+        clientId: selectedClientId,
         tag: finalTag,
-        startTime: new Date().toISOString(),
-        date: new Date().toLocaleDateString('pt-BR') // Formato PT-BR
+        startTime: recordStartTime.toISOString(),
+        date: recordStartTime.toLocaleDateString('pt-BR')
       };
-      console.log('Início de jornada registrado:', startRecord);
-      localStorage.setItem('currentTimeRecord', JSON.stringify(startRecord));
+      localStorage.setItem('currentTimeRecord', JSON.stringify(startRecordData));
+      console.log('Cronômetro iniciado:', startRecordData);
     } else {
       setIsRunning(false);
-      const savedRecord = localStorage.getItem('currentTimeRecord');
-      if (!savedRecord) {
-        console.error('Não foi encontrado o registro de início');
+      const savedRecordJson = localStorage.getItem('currentTimeRecord');
+      if (!savedRecordJson) {
+        console.error('Registro de início não encontrado ao parar o cronômetro.');
         return;
       }
-      const startRecord = JSON.parse(savedRecord);
-      const now = new Date();
-      const completeRecord = {
-        userId: startRecord.userId,
-        userName: startRecord.userName,
-        clientId: startRecord.clientId,
-        tag: startRecord.tag,
-        startTime: startRecord.startTime,
-        endTime: now.toISOString(),
-        elapsedTime: elapsedTime,
-        date: startRecord.date
-      };
-      const totalMinutes = Math.floor(elapsedTime / 60000);
+      const startRecord: CurrentTimeRecordData = JSON.parse(savedRecordJson);
+      const endTime = new Date();
+      const finalElapsedTime = elapsedTime; // elapsedTime já tem o total em ms
+
+      const totalMinutes = Math.floor(finalElapsedTime / 60000);
       const hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
-      const timeRecord = {
+
+      const newTimeRecord: Partial<TimeRecord> = {
+        id: `rec-${Date.now()}`,
+        userId: startRecord.userId!,
         date: startRecord.date,
-        entry: new Date(startRecord.startTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        exit: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        total: `${hours}h ${minutes}m`,
-        status: 'Completado',
-        client: startRecord.clientId,
-        tag: startRecord.tag
+        startTime: new Date(startRecord.startTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        endTime: endTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+        totalWorkTime: totalMinutes,
+        status: 'Completo (Cron.)',
+        clientId: startRecord.clientId,
+        clientTag: startRecord.tag, // Mantendo clientTag para compatibilidade com folha de ponto
+        usedEntryTolerance: false, // Adicionar lógica se necessário
+        usedExitTolerance: false   // Adicionar lógica se necessário
       };
-      saveTimeRecordForEmployee(startRecord.userId, timeRecord);
-      console.log('Jornada completa registrada:', completeRecord);
+      saveTimeRecordForEmployee(startRecord.userId!, newTimeRecord as TimeRecord);
       localStorage.removeItem('currentTimeRecord');
       setTimer('00:00:00');
       setElapsedTime(0);
-      alert(`Jornada finalizada corretamente. Tempo trabalhado: ${hours}h ${minutes}m`);
+      setStartTimeForCalc(null);
+      alert(`Jornada finalizada. Tempo trabalhado: ${hours}h ${minutes}m`);
     }
   };
 
-  // Guardar registro de tiempo para el empleado
-  const saveTimeRecordForEmployee = (employeeId, timeRecord) => {
+  const saveTimeRecordForEmployee = (employeeId: string, timeRecord: TimeRecord) => {
     try {
       const storedEmployees = localStorage.getItem('timetracker_employees');
-      let employees = [];
-      if (storedEmployees) {
-          employees = JSON.parse(storedEmployees);
-      } else {
-          console.warn('Nenhum empregado encontrado no localStorage. Criando nova lista.');
-          // Opcional: inicializar com dados de exemplo se necessário
-      }
-
+      let employees: Employee[] = storedEmployees ? JSON.parse(storedEmployees) : [];
       const employeeIndex = employees.findIndex(emp => emp.id === employeeId);
-      if (employeeIndex === -1) {
-        // Se o empregado não for encontrado, adiciona um novo (ou loga um erro, dependendo da lógica desejada)
-        console.warn(`Empregado com ID ${employeeId} não encontrado. Adicionando novo registro pode não funcionar como esperado sem um empregado existente.`);
-        // Poderia adicionar o empregado aqui se fizesse sentido
-        // employees.push({ id: employeeId, name: user?.name || 'Nome Desconhecido', timeRecords: [timeRecord] });
-        console.error('Empregado não encontrado. Não é possível salvar o registro de tempo.');
-        return; // Impede salvar se o empregado não existe
-      }
 
-      if (!employees[employeeIndex].timeRecords) {
-        employees[employeeIndex].timeRecords = [];
+      if (employeeIndex !== -1) {
+        if (!employees[employeeIndex].timeRecords) {
+          employees[employeeIndex].timeRecords = [];
+        }
+        employees[employeeIndex].timeRecords!.push(timeRecord);
+        localStorage.setItem('timetracker_employees', JSON.stringify(employees));
+        console.log('Registro de tempo salvo para o funcionário:', employeeId);
+      } else {
+        console.error('Funcionário não encontrado para salvar registro de tempo.');
       }
-      employees[employeeIndex].timeRecords.push(timeRecord);
-      localStorage.setItem('timetracker_employees', JSON.stringify(employees));
-      console.log('Registro guardado para o empregado:', employeeId);
     } catch (error) {
-      console.error('Erro ao guardar o registro de tempo:', error);
+      console.error('Erro ao salvar registro de tempo:', error);
     }
   };
 
-  // Manejar cambio de etiqueta (cronômetro)
-  const handleTagChange = (e) => {
+  const handleTagChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     setSelectedTag(value);
     setShowCustomTag(value === 'Outro');
+    if (value !== 'Outro') setCustomTag('');
   };
 
-  // Manejar cambio de etiqueta (manual)
-  const handleManualTagChange = (e) => {
+  const handleManualTagChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     setManualTag(value);
     setShowManualCustomTag(value === 'Outro');
+    if (value !== 'Outro') setManualCustomTag('');
   };
 
-  // Submeter registro manual
-  const handleManualSubmit = (e) => {
+  const handleManualSubmit = (e: FormEvent) => {
     e.preventDefault();
-
-    if (!manualDate || !manualStartTime || !manualEndTime || !manualClient || !manualTag) {
-      alert('Por favor, preencha todos os campos obrigatórios (Data, Início, Fim, Cliente, Etiqueta).');
-      return;
+    if (!user?.id) { alert("Usuário não logado."); return; }
+    if (!manualDate || !manualStartTime || !manualEndTime || !manualClientId || !manualTag) {
+      alert('Preencha todos os campos obrigatórios (Data, Início, Fim, Cliente, Etiqueta).'); return;
     }
-
     if (manualTag === 'Outro' && !manualCustomTag) {
-      alert('Por favor, insira uma etiqueta personalizada para a opção "Outro".');
-      return;
+      alert('Insira uma etiqueta personalizada.'); return;
     }
 
-    const finalManualTag = manualTag === 'Outro' ? manualCustomTag : manualTag;
+    const startDateTime = new Date(`${manualDate}T${manualStartTime}:00`);
+    const endDateTime = new Date(`${manualDate}T${manualEndTime}:00`);
 
-    // Construir objetos Date completos para cálculo
-    const startDateTimeStr = `${manualDate}T${manualStartTime}:00`;
-    const endDateTimeStr = `${manualDate}T${manualEndTime}:00`;
-
-    const startDateTime = new Date(startDateTimeStr);
-    const endDateTime = new Date(endDateTimeStr);
-
-    if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime())) {
-        alert('Formato de data ou hora inválido. Use YYYY-MM-DD para data e HH:MM para hora.');
-        return;
+    if (isNaN(startDateTime.getTime()) || isNaN(endDateTime.getTime()) || endDateTime <= startDateTime) {
+      alert('Horas de início e fim inválidas.'); return;
     }
 
-    if (endDateTime <= startDateTime) {
-      alert('A hora de fim deve ser posterior à hora de início.');
-      return;
-    }
-
-    const manualElapsedTime = endDateTime.getTime() - startDateTime.getTime(); // Em milissegundos
-    const totalMinutes = Math.floor(manualElapsedTime / 60000);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-
-    // Formatar data para pt-BR
+    const manualTotalMinutes = (endDateTime.getTime() - startDateTime.getTime()) / 60000;
+    const hours = Math.floor(manualTotalMinutes / 60);
+    const minutes = manualTotalMinutes % 60;
     const formattedDate = new Date(manualDate + 'T00:00:00').toLocaleDateString('pt-BR');
 
-    const timeRecord = {
+    const newTimeRecord: Partial<TimeRecord> = {
+      id: `rec-manual-${Date.now()}`,
+      userId: user.id,
       date: formattedDate,
-      entry: manualStartTime, // Já está em HH:MM
-      exit: manualEndTime,   // Já está em HH:MM
-      total: `${hours}h ${minutes}m`,
-      status: 'Completado Manualmente',
-      client: manualClient,
-      tag: finalManualTag
+      startTime: manualStartTime,
+      endTime: manualEndTime,
+      totalWorkTime: manualTotalMinutes,
+      status: 'Manual',
+      clientId: manualClientId,
+      clientTag: manualTag === 'Outro' ? manualCustomTag : manualTag,
+      usedEntryTolerance: false,
+      usedExitTolerance: false
     };
-
-    saveTimeRecordForEmployee(user?.id, timeRecord);
-
-    alert(`Registro manual adicionado com sucesso. Tempo trabalhado: ${hours}h ${minutes}m`);
-
-    // Limpar formulário manual
+    saveTimeRecordForEmployee(user.id, newTimeRecord as TimeRecord);
+    alert(`Registro manual adicionado. Tempo: ${hours}h ${minutes}m`);
+    // Resetar formulário manual
     setManualDate(new Date().toISOString().split('T')[0]);
     setManualStartTime('');
     setManualEndTime('');
-    // setManualClient('MAGNETIC PLACE'); // Manter o último cliente selecionado pode ser útil
+    // Manter cliente padrão ou o último selecionado pode ser útil
+    // setManualClientIdState(currentUserData?.defaultClientId || (availableClientsForTimer.length > 0 ? availableClientsForTimer[0].id : ''));
     setManualTag('');
     setManualCustomTag('');
     setShowManualCustomTag(false);
   };
 
-  // Verificar se há uma jornada em progresso ao carregar a página
-  useEffect(() => {
-    const savedRecord = localStorage.getItem('currentTimeRecord');
-    if (savedRecord) {
-      try {
-        const record = JSON.parse(savedRecord);
-        const savedStartTime = new Date(record.startTime).getTime();
-        const now = Date.now();
-        const savedElapsedTime = now - savedStartTime;
-        setSelectedClient(record.clientId);
-        if (record.tag) {
-          if (tags.includes(record.tag)) {
-            setSelectedTag(record.tag);
-          } else {
-            setSelectedTag('Outro');
-            setCustomTag(record.tag);
-            setShowCustomTag(true);
-          }
-        }
-        setStartTime(now);
-        setElapsedTime(savedElapsedTime);
-        setIsRunning(true);
-        const totalSeconds = Math.floor(savedElapsedTime / 1000);
-        const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
-        const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
-        const seconds = String(totalSeconds % 60).padStart(2, '0');
-        setTimer(`${hours}:${minutes}:${seconds}`);
-      } catch (error) {
-        console.error('Erro ao carregar o registro de tempo guardado:', error);
-        localStorage.removeItem('currentTimeRecord');
-      }
-    }
-  }, []);
-
+  if (authLoading) {
+    return <div className="min-h-screen flex items-center justify-center"><p>Carregando autenticação...</p></div>;
+  }
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -304,50 +324,56 @@ export default function CronometroPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-8">
+    <div className="max-w-4xl mx-auto p-4 sm:p-6 space-y-8 font-sans">
       {/* Seção do Cronômetro Automático */}
-      <div className="bg-white rounded-lg shadow-md p-6">
-        <h1 className="text-2xl font-bold text-gray-800 mb-4">Cronômetro Automático</h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 pb-4 border-b border-gray-200">
           <div>
-            <p className="text-gray-700">Hora atual: <span className="font-semibold">{currentTime}</span></p>
-            <p className="text-gray-700">Bem-vindo, <span className="font-semibold">{user?.name || 'Usuário'}</span></p>
-            <p className="text-gray-700">{currentDate}</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Cronômetro</h1>
+            <p className="text-sm text-gray-600">Bem-vindo, <span className="font-semibold">{user?.name || 'Usuário'}</span>!</p>
           </div>
-          <div className="flex items-start justify-end">
-            <div className={`inline-flex items-center px-3 py-1 rounded-full ${isRunning ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-700'}`}>
-              <span className={`w-2 h-2 mr-2 rounded-full ${isRunning ? 'bg-green-500' : 'bg-gray-500'}`}></span>
-              {isRunning ? 'Ativo' : 'Inativo'}
-            </div>
+          <div className="text-right mt-2 sm:mt-0">
+            <p className="text-lg font-semibold text-gray-700">{currentTime}</p>
+            <p className="text-xs text-gray-500">{currentDate}</p>
           </div>
         </div>
+
+        <div className="text-center mb-8">
+          <div className={`text-5xl sm:text-7xl font-mono font-bold mb-2 ${isRunning ? 'text-green-600' : 'text-gray-800'}`}>{timer}</div>
+          <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${isRunning ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+            <span className={`w-2.5 h-2.5 mr-2 rounded-full ${isRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+            {isRunning ? 'EM ANDAMENTO' : 'PARADO'}
+          </div>
+        </div>
+
         {!isRunning && (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="space-y-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="client" className="block text-gray-700 mb-2">Cliente</label>
+                <label htmlFor="selectedClientId" className="block text-sm font-medium text-gray-700 mb-1">Cliente *</label>
                 <select
-                  id="client"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={selectedClient}
-                  onChange={(e) => setSelectedClient(e.target.value)}
+                  id="selectedClientId"
+                  className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  value={selectedClientId}
+                  onChange={(e) => setSelectedClientId(e.target.value)}
                   disabled={isRunning}
                 >
-                  {clients.map((client) => (
-                    <option key={client} value={client}>{client}</option>
+                  <option value="">Selecione um cliente</option>
+                  {availableClientsForTimer.map((client) => (
+                    <option key={client.id} value={client.id}>{client.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label htmlFor="tag" className="block text-gray-700 mb-2">Etiqueta</label>
+                <label htmlFor="selectedTag" className="block text-sm font-medium text-gray-700 mb-1">Etiqueta (Projeto/Tarefa) *</label>
                 <select
-                  id="tag"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  id="selectedTag"
+                  className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                   value={selectedTag}
                   onChange={handleTagChange}
                   disabled={isRunning}
                 >
-                  <option value="">Selecionar etiqueta</option>
+                  <option value="">Selecione uma etiqueta</option>
                   {tags.map((tag) => (
                     <option key={tag} value={tag}>{tag}</option>
                   ))}
@@ -355,166 +381,140 @@ export default function CronometroPage() {
               </div>
             </div>
             {showCustomTag && (
-              <div className="mb-6">
-                <label htmlFor="customTag" className="block text-gray-700 mb-2">Etiqueta personalizada</label>
+              <div>
+                <label htmlFor="customTag" className="block text-sm font-medium text-gray-700 mb-1">Etiqueta Personalizada *</label>
                 <input
                   id="customTag"
                   type="text"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   value={customTag}
                   onChange={(e) => setCustomTag(e.target.value)}
-                  placeholder="Insira uma etiqueta personalizada"
+                  placeholder="Insira a etiqueta específica"
                   disabled={isRunning}
+                  required={selectedTag === 'Outro'}
                 />
               </div>
             )}
-          </>
-        )}
-        <div className="text-center py-8">
-          <div className="text-6xl font-mono font-bold text-gray-800 mb-8">{timer}</div>
-          <button
-            onClick={toggleTimer}
-            disabled={!isRunning && (!selectedTag || (selectedTag === 'Outro' && !customTag))}
-            className={`flex items-center justify-center mx-auto px-6 py-3 rounded-md text-white font-medium ${
-              isRunning
-                ? 'bg-red-500 hover:bg-red-600'
-                : (!selectedTag || (selectedTag === 'Outro' && !customTag))
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-blue-500 hover:bg-blue-600'
-            }`}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-              {isRunning ? (
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-              ) : (
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-              )}
-            </svg>
-            {isRunning ? 'Finalizar Jornada' : 'Iniciar Jornada'}
-          </button>
-        </div>
-        {!isRunning && (
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-            <h3 className="font-semibold text-blue-800 mb-2">Instruções (Cronômetro):</h3>
-            <ol className="list-decimal list-inside text-blue-700 space-y-1">
-              <li>Selecione um cliente e uma etiqueta para a atividade.</li>
-              <li>Clique em "Iniciar Jornada" para começar a registrar o tempo automaticamente.</li>
-              <li>Quando terminar, clique em "Finalizar Jornada".</li>
-              <li>O registro será guardado e aparecerá nos relatórios.</li>
-            </ol>
           </div>
         )}
+
+        <button
+          onClick={toggleTimer}
+          disabled={!isRunning && (!selectedClientId || !selectedTag || (selectedTag === 'Outro' && !customTag))}
+          className={`w-full flex items-center justify-center px-6 py-3.5 rounded-lg text-base font-semibold text-white transition-colors duration-150 ease-in-out focus:outline-none focus:ring-4 ${ 
+            isRunning 
+              ? 'bg-red-600 hover:bg-red-700 focus:ring-red-300' 
+              : (!selectedClientId || !selectedTag || (selectedTag === 'Outro' && !customTag)) 
+                ? 'bg-gray-400 cursor-not-allowed' 
+                : 'bg-indigo-600 hover:bg-indigo-700 focus:ring-indigo-300'
+          }`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+            {isRunning ? (
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clipRule="evenodd" />
+            ) : (
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+            )}
+          </svg>
+          {isRunning ? 'PARAR CRONÔMETRO' : 'INICIAR CRONÔMETRO'}
+        </button>
       </div>
 
-      {/* Seção de Registro Manual (só aparece se o cronômetro não estiver ativo) */}
-      {!isRunning && (
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <h2 className="text-xl font-bold text-gray-800 mb-4">Registro Manual de Horas</h2>
-          <form onSubmit={handleManualSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="manualDate" className="block text-gray-700 mb-1">Data</label>
-                <input
-                  id="manualDate"
-                  type="date"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={manualDate}
-                  onChange={(e) => setManualDate(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="manualStartTime" className="block text-gray-700 mb-1">Hora Início</label>
-                <input
-                  id="manualStartTime"
-                  type="time"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={manualStartTime}
-                  onChange={(e) => setManualStartTime(e.target.value)}
-                  required
-                />
-              </div>
-              <div>
-                <label htmlFor="manualEndTime" className="block text-gray-700 mb-1">Hora Fim</label>
-                <input
-                  id="manualEndTime"
-                  type="time"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={manualEndTime}
-                  onChange={(e) => setManualEndTime(e.target.value)}
-                  required
-                />
-              </div>
+      {/* Seção de Registro Manual */}
+      <div className="bg-white rounded-xl shadow-lg p-6 sm:p-8">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 pb-4 border-b border-gray-200">Registro Manual de Horas</h2>
+        <form onSubmit={handleManualSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="manualDate" className="block text-sm font-medium text-gray-700 mb-1">Data *</label>
+              <input
+                id="manualDate"
+                type="date"
+                className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                value={manualDate}
+                onChange={(e) => setManualDate(e.target.value)}
+                required
+              />
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div>
-                <label htmlFor="manualClient" className="block text-gray-700 mb-1">Cliente</label>
+            <div>
+                <label htmlFor="manualClientIdState" className="block text-sm font-medium text-gray-700 mb-1">Cliente *</label>
                 <select
-                  id="manualClient"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={manualClient}
-                  onChange={(e) => setManualClient(e.target.value)}
+                  id="manualClientIdState"
+                  className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                  value={manualClientId}
+                  onChange={(e) => setManualClientIdState(e.target.value)}
                   required
                 >
-                  {clients.map((client) => (
-                    <option key={client} value={client}>{client}</option>
+                  <option value="">Selecione um cliente</option>
+                  {availableClientsForTimer.map((client) => (
+                    <option key={client.id} value={client.id}>{client.name}</option>
                   ))}
                 </select>
-              </div>
-              <div>
-                <label htmlFor="manualTag" className="block text-gray-700 mb-1">Etiqueta</label>
-                <select
-                  id="manualTag"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={manualTag}
-                  onChange={handleManualTagChange}
-                  required
-                >
-                  <option value="">Selecionar etiqueta</option>
-                  {tags.map((tag) => (
-                    <option key={tag} value={tag}>{tag}</option>
-                  ))}
-                </select>
-              </div>
             </div>
-
-            {showManualCustomTag && (
-              <div>
-                <label htmlFor="manualCustomTag" className="block text-gray-700 mb-1">Etiqueta personalizada</label>
-                <input
-                  id="manualCustomTag"
-                  type="text"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  value={manualCustomTag}
-                  onChange={(e) => setManualCustomTag(e.target.value)}
-                  placeholder="Insira a etiqueta personalizada"
-                  required={manualTag === 'Outro'}
-                />
-              </div>
-            )}
-
-            <div className="text-right">
-              <button
-                type="submit"
-                className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50"
-              >
-                Adicionar Registro Manual
-              </button>
-            </div>
-          </form>
-           <div className="mt-6 p-4 bg-green-50 rounded-lg">
-            <h3 className="font-semibold text-green-800 mb-2">Instruções (Registro Manual):</h3>
-            <ol className="list-decimal list-inside text-green-700 space-y-1">
-              <li>Preencha a data, hora de início e hora de fim do trabalho.</li>
-              <li>Selecione o cliente e a etiqueta correspondente.</li>
-              <li>Se escolher "Outro" como etiqueta, preencha o campo de etiqueta personalizada.</li>
-              <li>Clique em "Adicionar Registro Manual".</li>
-              <li>O registro será guardado e aparecerá nos relatórios.</li>
-            </ol>
           </div>
-        </div>
-      )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="manualStartTime" className="block text-sm font-medium text-gray-700 mb-1">Hora de Início *</label>
+              <input
+                id="manualStartTime"
+                type="time"
+                className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                value={manualStartTime}
+                onChange={(e) => setManualStartTime(e.target.value)}
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="manualEndTime" className="block text-sm font-medium text-gray-700 mb-1">Hora de Fim *</label>
+              <input
+                id="manualEndTime"
+                type="time"
+                className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                value={manualEndTime}
+                onChange={(e) => setManualEndTime(e.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="manualTag" className="block text-sm font-medium text-gray-700 mb-1">Etiqueta (Projeto/Tarefa) *</label>
+            <select
+              id="manualTag"
+              className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+              value={manualTag}
+              onChange={handleManualTagChange}
+              required
+            >
+              <option value="">Selecionar etiqueta</option>
+              {tags.map((tag) => (
+                <option key={tag} value={tag}>{tag}</option>
+              ))}
+            </select>
+          </div>
+          {showManualCustomTag && (
+            <div>
+              <label htmlFor="manualCustomTag" className="block text-sm font-medium text-gray-700 mb-1">Etiqueta Personalizada *</label>
+              <input
+                id="manualCustomTag"
+                type="text"
+                className="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                value={manualCustomTag}
+                onChange={(e) => setManualCustomTag(e.target.value)}
+                placeholder="Insira a etiqueta específica"
+                required={manualTag === 'Outro'}
+              />
+            </div>
+          )}
+          <div className="pt-2">
+            <button
+              type="submit"
+              className="w-full flex items-center justify-center px-6 py-3 rounded-lg text-base font-semibold text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-300 transition-colors duration-150 ease-in-out"
+            >
+              Adicionar Registro Manual
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

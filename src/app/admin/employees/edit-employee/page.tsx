@@ -1,377 +1,420 @@
+
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, FormEvent, ChangeEvent, Suspense } from 'react'; // Adicionado Suspense
+import { useRouter, useSearchParams } from 'next/navigation';
+import type { Client, Employee } from '../../../../lib/time-tracking-models';
 
-// Definir interfaces para TypeScript
-interface EmployeeData {
-  id: string;
-  name: string;
-  email: string;
-  department: string;
-  position: string;
-  startDate: string;
-  status?: string;
-  statusClass?: string;
-  phone?: string;
-  address?: string;
-  emergencyContact?: string;
-  notes?: string;
-}
+// Componente interno para usar useSearchParams e ser envolvido por Suspense
+function EditEmployeeForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const employeeId = searchParams.get('id');
 
-export default function EditEmployeePage() {
-  const [employeeId, setEmployeeId] = useState<string>('');
-  const [employeeData, setEmployeeData] = useState<EmployeeData>({
-    id: '',
+  const [formData, setFormData] = useState<Partial<Employee & { password_confirm?: string }>>({
     name: '',
     email: '',
     department: '',
     position: '',
     startDate: '',
-    status: '',
-    statusClass: ''
+    status: 'active',
+    password: '',
+    password_confirm: '',
+    assignedClientIds: [],
+    defaultClientId: ''
   });
+  const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string>('');
 
-  // Obtener el ID del empleado de la URL al cargar la página
   useEffect(() => {
-    // Función para obtener parámetros de la URL
-    const getQueryParam = (param: string): string | null => {
-      const urlParams = new URLSearchParams(window.location.search);
-      return urlParams.get(param);
-    };
-
-    const id = getQueryParam('id');
-    if (id) {
-      setEmployeeId(id);
-      loadEmployeeData(id);
-    } else {
-      setError('No se proporcionó un ID de empleado válido');
-      setLoading(false);
-    }
-  }, []);
-
-  // Función para cargar datos del empleado desde localStorage
-  const loadEmployeeData = (id: string): void => {
-    try {
-      // Primero intentar obtener el empleado seleccionado de localStorage
-      const selectedEmployeeJson = localStorage.getItem('selected_employee');
-      if (selectedEmployeeJson) {
-        const selectedEmployee = JSON.parse(selectedEmployeeJson);
-        
-        // Verificar que el ID coincida
-        if (selectedEmployee && selectedEmployee.id === id) {
-          setEmployeeData(selectedEmployee);
-          setLoading(false);
-          return;
-        }
+    const storedClients = localStorage.getItem('timetracker_clients');
+    if (storedClients) {
+      try {
+        const parsedClients: Client[] = JSON.parse(storedClients);
+        setClients(parsedClients.filter(client => client.status === 'active'));
+      } catch (e) {
+        console.error("Erro ao carregar clientes do localStorage:", e);
+        setClients([]);
       }
-      
-      // Si no hay empleado seleccionado o el ID no coincide, buscar en la lista completa
+    }
+
+    if (employeeId) {
       const storedEmployees = localStorage.getItem('timetracker_employees');
       if (storedEmployees) {
-        const employees = JSON.parse(storedEmployees);
-        const employee = employees.find((emp: EmployeeData) => emp.id === id);
-        
-        if (employee) {
-          setEmployeeData(employee);
-          // Guardar el empleado seleccionado para futuras referencias
-          localStorage.setItem('selected_employee', JSON.stringify(employee));
-        } else {
-          setError(`No se encontró ningún empleado con el ID: ${id}`);
+        try {
+          const employees: Employee[] = JSON.parse(storedEmployees);
+          const employeeToEdit = employees.find(emp => emp.id === employeeId);
+          if (employeeToEdit) {
+            const { password, ...employeeDetails } = employeeToEdit;
+            setFormData({
+              ...employeeDetails,
+              password: '',
+              password_confirm: '',
+              assignedClientIds: employeeToEdit.assignedClientIds || [],
+              defaultClientId: employeeToEdit.defaultClientId || ''
+            });
+          } else {
+            setError('Funcionário não encontrado.');
+          }
+        } catch (e) {
+          setError('Erro ao carregar dados do funcionário.');
+          console.error(e);
         }
-      } else {
-        setError('No hay empleados registrados en el sistema');
       }
-    } catch (error) {
-      console.error('Error al cargar datos del empleado:', error);
-      setError('Error al cargar datos del empleado');
+    } else {
+      setError('ID do funcionário não fornecido.');
     }
-    
     setLoading(false);
+  }, [employeeId]);
+
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { id, value, type } = e.target;
+    if (type === 'checkbox') {
+      const { checked } = e.target as HTMLInputElement;
+      setFormData(prevData => {
+        const existingAssignedClientIds = prevData.assignedClientIds || [];
+        let newAssignedClientIds;
+        if (checked) {
+          newAssignedClientIds = [...existingAssignedClientIds, value];
+        } else {
+          newAssignedClientIds = existingAssignedClientIds.filter(clientId => clientId !== value);
+        }
+        const newDefaultClientId = newAssignedClientIds.includes(prevData.defaultClientId || '') ? prevData.defaultClientId : '';
+        return {
+          ...prevData,
+          assignedClientIds: newAssignedClientIds,
+          defaultClientId: newDefaultClientId,
+        };
+      });
+    } else {
+      setFormData(prevData => ({
+        ...prevData,
+        [id]: value
+      }));
+    }
   };
 
-  // Función para eliminar empleado
+  const handleSaveChanges = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+
+    if (formData.password && formData.password !== formData.password_confirm) {
+      setError('As senhas não coincidem.');
+      setIsSubmitting(false);
+      return;
+    }
+    if (!formData.name || !formData.email || !formData.department || !formData.position || !formData.startDate) {
+        setError('Por favor, preencha todos os campos obrigatórios.');
+        setIsSubmitting(false);
+        return;
+    }
+
+    try {
+      const storedEmployees = localStorage.getItem('timetracker_employees');
+      let employees: Employee[] = storedEmployees ? JSON.parse(storedEmployees) : [];
+      if (!Array.isArray(employees)) employees = [];
+
+      const employeeIndex = employees.findIndex(emp => emp.id === employeeId);
+      if (employeeIndex === -1) {
+        setError('Funcionário não encontrado para atualização.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const originalPassword = employees[employeeIndex].password;
+      const updatedEmployee: Employee = {
+        ...employees[employeeIndex],
+        name: formData.name!,
+        email: formData.email!,
+        department: formData.department!,
+        position: formData.position!,
+        startDate: formData.startDate!,
+        status: formData.status!,
+        password: formData.password ? formData.password : originalPassword,
+        assignedClientIds: formData.assignedClientIds || [],
+        defaultClientId: formData.defaultClientId || ''
+      };
+
+      employees[employeeIndex] = updatedEmployee;
+      localStorage.setItem('timetracker_employees', JSON.stringify(employees));
+
+      alert('Dados do funcionário atualizados com sucesso!');
+      router.push('/admin/employees');
+    } catch (err) {
+      console.error('Erro ao salvar funcionário:', err);
+      setError('Ocorreu um erro ao salvar as alterações do funcionário.');
+      setIsSubmitting(false);
+    }
+  };
+  
   const handleDeleteEmployee = (): void => {
-    if (confirm('¿Está seguro que desea eliminar este empleado? Esta acción no se puede deshacer.')) {
+    if (!employeeId) return;
+    if (confirm('Tem certeza que deseja excluir este funcionário? Esta ação não pode ser desfeita.')) {
       try {
         const storedEmployees = localStorage.getItem('timetracker_employees');
         if (storedEmployees) {
-          const employees = JSON.parse(storedEmployees);
-          const updatedEmployees = employees.filter((emp: EmployeeData) => emp.id !== employeeId);
-          
-          // Actualizar localStorage
+          let employees: Employee[] = JSON.parse(storedEmployees);
+          const updatedEmployees = employees.filter(emp => emp.id !== employeeId);
           localStorage.setItem('timetracker_employees', JSON.stringify(updatedEmployees));
-          
-          // Limpiar el empleado seleccionado si es el que se está eliminando
-          const selectedEmployeeJson = localStorage.getItem('selected_employee');
-          if (selectedEmployeeJson) {
-            const selectedEmployee = JSON.parse(selectedEmployeeJson);
-            if (selectedEmployee && selectedEmployee.id === employeeId) {
-              localStorage.removeItem('selected_employee');
-            }
-          }
-          
-          alert(`Empleado ${employeeData.name} (${employeeId}) eliminado correctamente`);
-          window.location.href = '/admin/employees';
+          alert('Funcionário excluído com sucesso.');
+          router.push('/admin/employees');
         }
       } catch (error) {
-        console.error('Error al eliminar empleado:', error);
-        alert('Error al eliminar empleado');
+        console.error('Erro ao excluir funcionário:', error);
+        alert('Erro ao excluir funcionário.');
       }
-    }
-  };
-
-  // Función para guardar cambios
-  const handleSaveChanges = (event: React.FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    
-    try {
-      // Obtener valores del formulario
-      const form = event.target as HTMLFormElement;
-      const updatedEmployee: EmployeeData = {
-        id: employeeId,
-        name: (form.elements.namedItem('name') as HTMLInputElement).value,
-        email: (form.elements.namedItem('email') as HTMLInputElement).value,
-        department: (form.elements.namedItem('department') as HTMLSelectElement).value,
-        position: (form.elements.namedItem('position') as HTMLInputElement).value,
-        startDate: (form.elements.namedItem('startDate') as HTMLInputElement).value,
-        phone: (form.elements.namedItem('phone') as HTMLInputElement)?.value || employeeData.phone || '',
-        address: (form.elements.namedItem('address') as HTMLInputElement)?.value || employeeData.address || '',
-        emergencyContact: (form.elements.namedItem('emergencyContact') as HTMLInputElement)?.value || employeeData.emergencyContact || '',
-        notes: (form.elements.namedItem('notes') as HTMLTextAreaElement)?.value || employeeData.notes || '',
-        status: employeeData.status || 'Activo',
-        statusClass: employeeData.statusClass || 'bg-green-100 text-green-800'
-      };
-      
-      // Actualizar en localStorage
-      const storedEmployees = localStorage.getItem('timetracker_employees');
-      if (storedEmployees) {
-        const employees = JSON.parse(storedEmployees);
-        const updatedEmployees = employees.map((emp: EmployeeData) => 
-          emp.id === employeeId ? updatedEmployee : emp
-        );
-        
-        localStorage.setItem('timetracker_employees', JSON.stringify(updatedEmployees));
-        
-        // Actualizar también el empleado seleccionado
-        localStorage.setItem('selected_employee', JSON.stringify(updatedEmployee));
-        
-        alert(`Cambios guardados correctamente para ${updatedEmployee.name} (${employeeId})`);
-        window.location.href = '/admin/employees';
-      } else {
-        setError('No se pudieron guardar los cambios: No hay empleados registrados');
-      }
-    } catch (error) {
-      console.error('Error al guardar cambios:', error);
-      alert('Error al guardar cambios');
     }
   };
 
   if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center py-10">
-          <div className="inline-block animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-          <p className="mt-2 text-gray-600">Cargando información del empleado...</p>
-        </div>
-      </div>
-    );
+    return <div className="container mx-auto px-4 py-8 text-center">Carregando dados do funcionário...</div>;
   }
 
-  if (error) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
-          <p className="font-bold">Error</p>
-          <p>{error}</p>
-          <div className="mt-4">
-            <a 
-              href="/admin/employees" 
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
-            >
-              Volver a la lista de empleados
-            </a>
-          </div>
-        </div>
-      </div>
-    );
+  if (error && !formData.name) {
+    return <div className="container mx-auto px-4 py-8 text-red-500 text-center">{error}</div>;
   }
+
+  const assignedClientsForDefaultSelection = clients.filter(client => 
+    formData.assignedClientIds?.includes(client.id)
+  );
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Editar Empleado</h1>
+      <h1 className="text-3xl font-bold mb-6 text-gray-800">Editar Funcionário</h1>
       
-      <div className="bg-white shadow-md rounded-lg p-6">
-        <form id="editEmployeeForm" onSubmit={handleSaveChanges}>
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="employeeId">
-              ID de Empleado
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline bg-gray-100" 
-              id="employeeId" 
-              type="text" 
-              value={employeeData.id}
-              readOnly
-            />
+      <div className="bg-white shadow-xl rounded-lg p-8">
+        {error && (
+          <div className="mb-6 p-4 bg-red-100 text-red-700 border border-red-300 rounded-md">
+            {error}
+          </div>
+        )}
+        
+        <form id="editEmployeeForm" onSubmit={handleSaveChanges} className="space-y-8">
+          <div>
+            <h2 className="text-2xl font-semibold mb-6 text-gray-700 border-b pb-3">Informações Básicas</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="name">
+                  Nome Completo *
+                </label>
+                <input 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="name" 
+                  type="text" 
+                  placeholder="Nome e sobrenome"
+                  value={formData.name || ''}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="email">
+                  Email *
+                </label>
+                <input 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="email" 
+                  type="email" 
+                  placeholder="exemplo@dominio.com"
+                  value={formData.email || ''}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="department">
+                  Departamento *
+                </label>
+                <select 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="department"
+                  value={formData.department || ''}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="">Selecione o departamento</option>
+                  <option value="Operações">Operações</option>
+                  <option value="Administração">Administração</option>
+                  <option value="Vendas">Vendas</option>
+                  <option value="Tecnologia">Tecnologia</option>
+                  <option value="Recursos Humanos">Recursos Humanos</option>
+                  <option value="Outro">Outro</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="position">
+                  Cargo *
+                </label>
+                <input 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="position" 
+                  type="text" 
+                  placeholder="Cargo ou posição"
+                  value={formData.position || ''}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="startDate">
+                  Data de Início *
+                </label>
+                <input 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="startDate" 
+                  type="date"
+                  value={formData.startDate || ''}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="status">
+                  Status *
+                </label>
+                <select 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="status"
+                  value={formData.status || 'active'}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="active">Ativo</option>
+                  <option value="inactive">Inativo</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-semibold mb-6 text-gray-700 border-b pb-3">Alterar Senha (Opcional)</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="password">
+                  Nova Senha
+                </label>
+                <input 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="password" 
+                  type="password"
+                  placeholder="Deixe em branco para não alterar"
+                  value={formData.password || ''}
+                  onChange={handleChange}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="password_confirm">
+                  Confirmar Nova Senha
+                </label>
+                <input 
+                  className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                  id="password_confirm" 
+                  type="password"
+                  placeholder="Confirme a nova senha"
+                  value={formData.password_confirm || ''}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-semibold mb-6 text-gray-700 border-b pb-3">Atribuição de Clientes</h2>
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Clientes Associados</label>
+                    {clients.length > 0 ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 max-h-60 overflow-y-auto p-2 border rounded-md">
+                            {clients.map(client => (
+                                <div key={client.id} className="flex items-center">
+                                    <input
+                                        id={`client-${client.id}`}
+                                        name="assignedClientIds"
+                                        type="checkbox"
+                                        value={client.id}
+                                        checked={formData.assignedClientIds?.includes(client.id)}
+                                        onChange={handleChange}
+                                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                                    />
+                                    <label htmlFor={`client-${client.id}`} className="ml-2 block text-sm text-gray-900">
+                                        {client.name}
+                                    </label>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <p className="text-sm text-gray-500">Nenhum cliente ativo encontrado. Adicione clientes na seção 'Clientes' para poder associá-los.</p>
+                    )}
+                </div>
+
+                {formData.assignedClientIds && formData.assignedClientIds.length > 0 && (
+                    <div>
+                        <label htmlFor="defaultClientId" className="block text-sm font-medium text-gray-700 mb-1">Cliente Padrão</label>
+                        <select
+                            id="defaultClientId"
+                            name="defaultClientId"
+                            value={formData.defaultClientId || ''}
+                            onChange={handleChange}
+                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+                        >
+                            <option value="">Nenhum cliente padrão</option>
+                            {assignedClientsForDefaultSelection.map(client => (
+                                <option key={client.id} value={client.id}>
+                                    {client.name}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Este cliente será pré-selecionado ao registrar horas.</p>
+                    </div>
+                )}
+            </div>
           </div>
           
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="name">
-              Nombre Completo
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="name" 
-              name="name"
-              type="text" 
-              defaultValue={employeeData.name}
-              required
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">
-              Email
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="email" 
-              name="email"
-              type="email" 
-              defaultValue={employeeData.email}
-              required
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="department">
-              Departamento
-            </label>
-            <select 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="department"
-              name="department"
-              defaultValue={employeeData.department}
-              required
+          <div className="flex items-center justify-between pt-6 border-t mt-10">
+            <button 
+              type="button"
+              onClick={handleDeleteEmployee}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
             >
-              <option value="Operaciones">Operaciones</option>
-              <option value="Administración">Administración</option>
-              <option value="Ventas">Ventas</option>
-              <option value="Tecnología">Tecnología</option>
-              <option value="Recursos Humanos">Recursos Humanos</option>
-              <option value="Marketing">Marketing</option>
-              <option value="Finanzas">Finanzas</option>
-              <option value="Otro">Otro</option>
-            </select>
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="position">
-              Cargo
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="position" 
-              name="position"
-              type="text" 
-              defaultValue={employeeData.position}
-              required
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="startDate">
-              Fecha de Inicio
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="startDate" 
-              name="startDate"
-              type="date"
-              defaultValue={employeeData.startDate}
-              required
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="phone">
-              Teléfono
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="phone" 
-              name="phone"
-              type="tel" 
-              defaultValue={employeeData.phone || ''}
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="address">
-              Dirección
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="address" 
-              name="address"
-              type="text" 
-              defaultValue={employeeData.address || ''}
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="emergencyContact">
-              Contacto de Emergencia
-            </label>
-            <input 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="emergencyContact" 
-              name="emergencyContact"
-              type="text" 
-              defaultValue={employeeData.emergencyContact || ''}
-            />
-          </div>
-          
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="notes">
-              Notas
-            </label>
-            <textarea 
-              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" 
-              id="notes" 
-              name="notes"
-              rows={3}
-              defaultValue={employeeData.notes || ''}
-            ></textarea>
-          </div>
-          
-          <div className="flex items-center justify-between mt-6">
-            <div className="flex space-x-2">
-              <a 
-                href="/admin/employees" 
-                className="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
+              Excluir Funcionário
+            </button>
+            <div className="flex items-center">
+              <button 
+                type="button"
+                onClick={() => router.push('/admin/employees')}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-md shadow-sm mr-3 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
               >
                 Cancelar
-              </a>
+              </button>
               <button 
-                className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" 
-                type="button"
-                onClick={handleDeleteEmployee}
+                className={`bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+                type="submit"
+                disabled={isSubmitting}
               >
-                Eliminar
+                {isSubmitting ? 'Salvando...' : 'Salvar Alterações'}
               </button>
             </div>
-            <button 
-              className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline" 
-              type="submit"
-            >
-              Guardar Cambios
-            </button>
           </div>
         </form>
       </div>
     </div>
   );
 }
+
+// Componente de exportação padrão que envolve EditEmployeeForm com Suspense
+export default function EditEmployeePage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto px-4 py-8 text-center">Carregando...</div>}>
+      <EditEmployeeForm />
+    </Suspense>
+  );
+}
+

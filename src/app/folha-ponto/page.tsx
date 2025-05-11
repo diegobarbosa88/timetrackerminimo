@@ -1,28 +1,14 @@
 
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, FormEvent, ChangeEvent } from 'react';
 import { useAuth } from '../../lib/auth'; // Ajuste o caminho conforme necessário
+import type { TimeRecord as ModelTimeRecord, Employee as ModelEmployee, Client as ModelClient } from '../../lib/time-tracking-models'; // Importando os modelos centrais
 
-// --- Tipos ---
-interface TimeRecord {
-  id: string;
-  date: string; // Formato DD/MM/YYYY
-  entry: string; // Formato HH:MM
-  exit: string; // Formato HH:MM
-  total: string; // Formato Xh Ym
-  status: string;
-  client: string;
-  tag: string;
-  comment?: string;
-  customTag?: string;
-}
-
-interface Employee {
-  id: string;
-  name: string;
-  timeRecords?: TimeRecord[];
-}
+// --- Tipos Adaptados para a Página (se necessário, mas idealmente usar os modelos centrais) ---
+interface TimeRecord extends ModelTimeRecord {}
+interface Employee extends ModelEmployee {}
+interface Client extends ModelClient {}
 
 interface GroupedRecords {
   [date: string]: TimeRecord[];
@@ -40,20 +26,17 @@ const calculateDailyTotal = (dailyRecords: TimeRecord[] | undefined): string => 
   if (!dailyRecords || dailyRecords.length === 0) return '';
   let totalMinutes = 0;
   dailyRecords.forEach(record => {
-    try {
-      const parts = record.total.match(/(\d+)h(?:\s*(\d+)m)?/);
-      if (parts) {
-        const hours = parseInt(parts[1], 10);
-        const minutes = parts[2] ? parseInt(parts[2], 10) : 0;
-        if (!isNaN(hours) && !isNaN(minutes)) totalMinutes += (hours * 60) + minutes;
-      } else {
-         const minOnlyParts = record.total.match(/(\d+)m/);
-         if(minOnlyParts) {
-            const minutes = parseInt(minOnlyParts[1], 10);
-            if(!isNaN(minutes)) totalMinutes += minutes;
-         } else console.warn("Parse total falhou:", record.total);
-      }
-    } catch (e) { console.error("Erro parse total:", record.total, e); }
+    if (record.totalWorkTime) { // Usar o campo numérico se disponível
+        totalMinutes += record.totalWorkTime;
+    } else if (record.startTime && record.endTime) { // Calcular se tiver início e fim
+        try {
+            const start = new Date(`2000-01-01T${record.startTime}:00`);
+            const end = new Date(`2000-01-01T${record.endTime}:00`);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
+                totalMinutes += (end.getTime() - start.getTime()) / 60000;
+            }
+        } catch (e) { console.error("Erro ao calcular totalWorkTime para registro:", record, e); }
+    }
   });
   if (totalMinutes === 0) return '';
   const hours = Math.floor(totalMinutes / 60);
@@ -67,19 +50,23 @@ const calculateDailyTotal = (dailyRecords: TimeRecord[] | undefined): string => 
 
 // --- Componente Principal ---
 export default function FolhaPontoPage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const [currentUserData, setCurrentUserData] = useState<Employee | null>(null);
   const [records, setRecords] = useState<TimeRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+  const [allClients, setAllClients] = useState<Client[]>([]);
+  const [availableClientsForTimesheet, setAvailableClientsForTimesheet] = useState<Client[]>([]);
 
   // Adição Manual (Modal)
   const [showAddModal, setShowAddModal] = useState(false);
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
   const [manualStartTime, setManualStartTime] = useState('');
   const [manualEndTime, setManualEndTime] = useState('');
-  const [manualClient, setManualClient] = useState('MAGNETIC PLACE');
-  const [manualTag, setManualTag] = useState('');
+  const [manualClientId, setManualClientId] = useState('');
+  const [manualTag, setManualTag] = useState(''); // Mantido para compatibilidade, mas pode ser removido/alterado
   const [manualCustomTag, setManualCustomTag] = useState('');
   const [showManualCustomTag, setShowManualCustomTag] = useState(false);
   const [manualComment, setManualComment] = useState('');
@@ -90,74 +77,117 @@ export default function FolhaPontoPage() {
 
   // Adição Inline
   const [addingInlineDate, setAddingInlineDate] = useState<string | null>(null);
-  const [addInlineFormData, setAddInlineFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'total' | 'status'>>>({});
+  const [addInlineFormData, setAddInlineFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'totalWorkTime' | 'status'>>>({});
 
   // Edição em Massa
-  const [selectedDays, setSelectedDays] = useState<string[]>([]); // Guarda as datas (DD/MM/YYYY) selecionadas
+  const [selectedDays, setSelectedDays] = useState<string[]>([]); 
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
-  const [bulkEditFormData, setBulkEditFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'total' | 'status' | 'date'>>>({ client: 'MAGNETIC PLACE', tag: '' });
+  const [bulkEditFormData, setBulkEditFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'totalWorkTime' | 'status' | 'date' | 'usedEntryTolerance' | 'usedExitTolerance'>>>({ clientId: '' });
   const [bulkEditShowCustomTag, setBulkEditShowCustomTag] = useState(false);
 
-  // Listas
-  const clients = ['MAGNETIC PLACE', 'Cliente A', 'Cliente B', 'Cliente C'];
   const tags = ['Desenvolvimento', 'Design', 'Reunião', 'Suporte', 'Administrativo', 'Outro'];
 
-  // --- Carregamento e Persistência ---
-  const loadRecordsFromStorage = () => {
-    if (!user?.id) return [];
+  // Carregar todos os clientes e dados do funcionário
+  useEffect(() => {
+    if (authLoading) return;
+    setIsLoading(true);
     try {
-      const storedEmployees = localStorage.getItem('timetracker_employees');
-      if (storedEmployees) {
-        const employees: Employee[] = JSON.parse(storedEmployees);
-        const currentUserData = employees.find(emp => emp.id === user.id);
-        return (currentUserData?.timeRecords || []).map(rec => ({ ...rec, id: rec.id || `rec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` }));
+      const storedClients = localStorage.getItem('timetracker_clients');
+      const activeClients = storedClients ? (JSON.parse(storedClients) as Client[]).filter(c => c.status === 'active') : [];
+      setAllClients(activeClients);
+
+      if (user?.id) {
+        const storedEmployees = localStorage.getItem('timetracker_employees');
+        if (storedEmployees) {
+          const employees: Employee[] = JSON.parse(storedEmployees);
+          const foundUser = employees.find(emp => emp.id === user.id);
+          if (foundUser) {
+            setCurrentUserData(foundUser);
+            setRecords(sortRecords(foundUser.timeRecords || []));
+            
+            // Determinar clientes disponíveis para este usuário
+            if (user.role === 'admin') {
+              setAvailableClientsForTimesheet(activeClients);
+            } else if (foundUser.assignedClientIds && foundUser.assignedClientIds.length > 0) {
+              const userClients = activeClients.filter(client => foundUser.assignedClientIds?.includes(client.id));
+              setAvailableClientsForTimesheet(userClients);
+            } else {
+              setAvailableClientsForTimesheet(activeClients); // Ou [] se preferir que não apareça nenhum se não atribuído
+            }
+            // Definir cliente padrão para novos registros
+            const defaultClient = foundUser.defaultClientId || (activeClients.length > 0 ? activeClients[0].id : '');
+            setManualClientId(defaultClient);
+            setAddInlineFormData(prev => ({ ...prev, clientId: defaultClient }));
+            setBulkEditFormData(prev => ({ ...prev, clientId: defaultClient }));
+
+          } else {
+             setAvailableClientsForTimesheet(activeClients); // Admin ou usuário não encontrado nos employees, mostra todos
+          }
+        }
+      } else {
+        // Usuário não logado ou sem ID, mostrar todos os clientes ativos (ou nenhum)
+        setAvailableClientsForTimesheet(activeClients);
       }
-    } catch (error) { console.error('Erro ao carregar:', error); }
-    return [];
-  };
+    } catch (error) {
+      console.error('Erro ao carregar dados iniciais:', error);
+    }
+    setIsLoading(false);
+  }, [user, authLoading]);
 
   const saveRecordsToStorage = (updatedRecords: TimeRecord[]) => {
-    if (!user?.id) return;
+    if (!user?.id || !currentUserData) return;
     try {
       const storedEmployees = localStorage.getItem('timetracker_employees');
       let employees: Employee[] = storedEmployees ? JSON.parse(storedEmployees) : [];
       const employeeIndex = employees.findIndex(emp => emp.id === user.id);
-      const recordsWithIds = updatedRecords.map(rec => ({ ...rec, id: rec.id || `rec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` }));
+      
+      const recordsWithIdsAndNumericTotal = updatedRecords.map(rec => {
+        let totalWorkTime = 0;
+        if (rec.startTime && rec.endTime) {
+            const start = new Date(`2000-01-01T${rec.startTime}:00`);
+            const end = new Date(`2000-01-01T${rec.endTime}:00`);
+            if (!isNaN(start.getTime()) && !isNaN(end.getTime()) && end > start) {
+                totalWorkTime = (end.getTime() - start.getTime()) / 60000; // em minutos
+            }
+        }
+        return {
+             ...rec, 
+             id: rec.id || `rec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+             totalWorkTime: totalWorkTime,
+             // Garantir que clientTag não seja usado, e sim clientId
+             clientTag: undefined 
+        };
+      });
+
       if (employeeIndex === -1) {
-        employees.push({ id: user.id, name: user.name || 'Usuário Desconhecido', timeRecords: recordsWithIds });
+        // Isso não deveria acontecer se currentUserData está setado
+        employees.push({ ...currentUserData, timeRecords: recordsWithIdsAndNumericTotal });
       } else {
-        employees[employeeIndex].timeRecords = recordsWithIds;
+        employees[employeeIndex].timeRecords = recordsWithIdsAndNumericTotal;
       }
       localStorage.setItem('timetracker_employees', JSON.stringify(employees));
-      setRecords(sortRecords(recordsWithIds));
-    } catch (error) { console.error('Erro ao salvar:', error); alert('Erro ao salvar.'); }
+      setRecords(sortRecords(recordsWithIdsAndNumericTotal));
+    } catch (error) { console.error('Erro ao salvar registros:', error); alert('Erro ao salvar registros.'); }
   };
 
   const sortRecords = (recordsToSort: TimeRecord[]): TimeRecord[] => {
     return [...recordsToSort].sort((a, b) => {
       try {
-        const dateA = new Date(`${a.date.split('/').reverse().join('-')}T${a.entry}:00`);
-        const dateB = new Date(`${b.date.split('/').reverse().join('-')}T${b.entry}:00`);
+        const dateA = new Date(`${a.date.split('/').reverse().join('-')}T${a.startTime}:00`);
+        const dateB = new Date(`${b.date.split('/').reverse().join('-')}T${b.startTime}:00`);
         if (!isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) return dateB.getTime() - dateA.getTime();
-      } catch (e) { console.error("Erro ao ordenar:", e); }
+      } catch (e) { console.error("Erro ao ordenar registros:", e); }
       return 0;
     });
   };
 
-  useEffect(() => {
-    setIsLoading(true);
-    const loaded = loadRecordsFromStorage();
-    setRecords(sortRecords(loaded));
-    setIsLoading(false);
-  }, [user?.id]);
-
-  // --- Filtros e Agrupamentos ---
+  // --- Filtros e Agrupamentos (sem alterações) ---
   const filteredRecords = useMemo(() => {
     return records.filter(record => {
       try {
         const [day, month, year] = record.date.split('/').map(Number);
         return (month - 1) === selectedMonth && year === selectedYear;
-      } catch (e) { console.error('Erro parsear data:', record.date, e); return false; }
+      } catch (e) { console.error('Erro ao parsear data para filtro:', record.date, e); return false; }
     });
   }, [records, selectedMonth, selectedYear]);
 
@@ -165,7 +195,8 @@ export default function FolhaPontoPage() {
     return filteredRecords.reduce((acc, record) => {
       if (!acc[record.date]) acc[record.date] = [];
       acc[record.date].push(record);
-      acc[record.date].sort((a, b) => a.entry.localeCompare(b.entry));
+      // Ordenar dentro do dia por hora de entrada
+      acc[record.date].sort((a, b) => (a.startTime || "").localeCompare(b.startTime || ""));
       return acc;
     }, {} as GroupedRecords);
   }, [filteredRecords]);
@@ -174,71 +205,82 @@ export default function FolhaPontoPage() {
     const date = new Date(selectedYear, selectedMonth, 1);
     const days: { date: Date, dateString: string }[] = [];
     while (date.getMonth() === selectedMonth) {
-      days.push({ date: new Date(date), dateString: date.toLocaleDateString('pt-BR') });
+      days.push({ date: new Date(date), dateString: date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) });
       date.setDate(date.getDate() + 1);
     }
-    return days;
+    return days.sort((a,b) => b.date.getTime() - a.date.getTime()); // Ordenar dias em ordem decrescente
   }, [selectedMonth, selectedYear]);
 
   // --- Adição Manual (Modal) ---
-  const handleManualTagChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleManualTagChange = (e: ChangeEvent<HTMLSelectElement>) => {
     const value = e.target.value;
     setManualTag(value);
     setShowManualCustomTag(value === 'Outro');
   };
   const resetManualForm = () => {
     setManualDate(new Date().toISOString().split('T')[0]);
-    setManualStartTime(''); setManualEndTime(''); setManualClient('MAGNETIC PLACE');
+    setManualStartTime(''); setManualEndTime(''); 
+    setManualClientId(currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : ''));
     setManualTag(''); setManualCustomTag(''); setShowManualCustomTag(false); setManualComment('');
     setShowAddModal(false);
   };
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleManualSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!manualDate || !manualStartTime || !manualEndTime || !manualClient || !manualTag || (manualTag === 'Outro' && !manualCustomTag)) { alert('Preencha campos.'); return; }
+    if (!manualDate || !manualStartTime || !manualEndTime || !manualClientId || !manualTag || (manualTag === 'Outro' && !manualCustomTag)) { alert('Preencha todos os campos obrigatórios.'); return; }
     const finalTag = manualTag === 'Outro' ? manualCustomTag : manualTag;
     const start = new Date(`${manualDate}T${manualStartTime}:00`);
     const end = new Date(`${manualDate}T${manualEndTime}:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) { alert('Horas inválidas.'); return; }
-    const elapsed = end.getTime() - start.getTime();
-    const mins = Math.floor(elapsed / 60000);
-    const hrs = Math.floor(mins / 60);
-    const formattedDate = new Date(manualDate + 'T00:00:00').toLocaleDateString('pt-BR');
-    const newRecord: TimeRecord = {
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) { alert('Horas de início e fim inválidas.'); return; }
+    
+    const formattedDate = new Date(manualDate + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const newRecord: Partial<TimeRecord> = {
       id: `rec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      date: formattedDate, entry: manualStartTime, exit: manualEndTime,
-      total: `${hrs}h ${mins % 60}m`, status: 'Manual',
-      client: manualClient, tag: finalTag, comment: manualComment,
+      userId: user!.id,
+      date: formattedDate, 
+      startTime: manualStartTime, 
+      endTime: manualEndTime,
+      status: 'Manual',
+      clientId: manualClientId, 
+      clientTag: finalTag, // Mantendo clientTag para o campo 'tag' que já existia. Renomear se necessário.
+      comment: manualComment,
+      usedEntryTolerance: false,
+      usedExitTolerance: false
     };
-    saveRecordsToStorage([...records, newRecord]);
-    alert(`Registro adicionado. Tempo: ${hrs}h ${mins % 60}m`);
+    saveRecordsToStorage([...records, newRecord as TimeRecord]);
+    alert(`Registro adicionado.`);
     resetManualForm();
   };
 
   // --- Edição Inline ---
   const handleEditClick = (record: TimeRecord) => {
     setEditingRecordId(record.id);
-    setEditFormData({ ...record, customTag: record.tag === 'Outro' ? record.customTag || record.tag : '' });
+    setEditFormData({ 
+        ...record, 
+        customTag: record.clientTag === 'Outro' ? record.comment : '' // Assumindo que customTag era armazenado em comment antes
+    });
     setAddingInlineDate(null);
-    setSelectedDays([]); // Deseleciona dias ao editar inline
+    setSelectedDays([]);
   };
   const handleCancelEdit = () => { setEditingRecordId(null); setEditFormData({}); };
-  const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleEditFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setEditFormData(prev => ({ ...prev, [name]: value }));
   };
   const handleSaveEdit = () => {
-    if (!editingRecordId || !editFormData.entry || !editFormData.exit || !editFormData.client || !editFormData.tag) { alert('Dados inválidos.'); return; }
-    if (editFormData.tag === 'Outro' && !editFormData.customTag) { alert('Insira etiqueta.'); return; }
-    const start = new Date(`2000-01-01T${editFormData.entry}:00`);
-    const end = new Date(`2000-01-01T${editFormData.exit}:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) { alert('Horas inválidas.'); return; }
-    const elapsed = end.getTime() - start.getTime();
-    const mins = Math.floor(elapsed / 60000);
-    const hrs = Math.floor(mins / 60);
-    const finalTag = editFormData.tag === 'Outro' ? editFormData.customTag || '' : editFormData.tag;
+    if (!editingRecordId || !editFormData.startTime || !editFormData.endTime || !editFormData.clientId || !editFormData.clientTag) { alert('Dados inválidos para salvar.'); return; }
+    if (editFormData.clientTag === 'Outro' && !editFormData.customTag) { alert('Insira a etiqueta personalizada.'); return; }
+    
+    const finalTag = editFormData.clientTag === 'Outro' ? editFormData.customTag || '' : editFormData.clientTag;
     const updatedRecords = records.map(rec => {
       if (rec.id === editingRecordId) {
-        return { ...rec, entry: editFormData.entry || rec.entry, exit: editFormData.exit || rec.exit, client: editFormData.client || rec.client, tag: finalTag, comment: editFormData.comment, customTag: editFormData.tag === 'Outro' ? editFormData.customTag : undefined, total: `${hrs}h ${mins % 60}m` };
+        return { 
+            ...rec, 
+            startTime: editFormData.startTime || rec.startTime, 
+            endTime: editFormData.endTime || rec.endTime, 
+            clientId: editFormData.clientId || rec.clientId, 
+            clientTag: finalTag, // Mantendo clientTag
+            comment: editFormData.comment, 
+        } as TimeRecord;
       }
       return rec;
     });
@@ -247,7 +289,7 @@ export default function FolhaPontoPage() {
     alert('Registro atualizado!');
   };
   const handleDeleteRecord = (recordId: string) => {
-    if (window.confirm('Excluir registro?')) {
+    if (window.confirm('Tem certeza que deseja excluir este registro?')) {
       saveRecordsToStorage(records.filter(rec => rec.id !== recordId));
       alert('Registro excluído!');
     }
@@ -256,33 +298,41 @@ export default function FolhaPontoPage() {
   // --- Adição Inline ---
   const handleStartAddInline = (dateString: string) => {
     setAddingInlineDate(dateString);
-    setAddInlineFormData({ date: dateString, client: 'MAGNETIC PLACE', tag: '' });
+    setAddInlineFormData({
+         date: dateString, 
+         clientId: currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : ''), 
+         clientTag: '', 
+         userId: user!.id,
+         usedEntryTolerance: false,
+         usedExitTolerance: false
+    });
     setEditingRecordId(null);
-    setSelectedDays([]); // Deseleciona dias ao adicionar inline
+    setSelectedDays([]);
   };
   const handleCancelAddInline = () => { setAddingInlineDate(null); setAddInlineFormData({}); };
-  const handleAddInlineFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleAddInlineFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setAddInlineFormData(prev => ({ ...prev, [name]: value }));
   };
   const handleSaveAddInline = () => {
-    if (!addingInlineDate || !addInlineFormData.entry || !addInlineFormData.exit || !addInlineFormData.client || !addInlineFormData.tag) { alert('Preencha campos.'); return; }
-    if (addInlineFormData.tag === 'Outro' && !addInlineFormData.customTag) { alert('Insira etiqueta.'); return; }
-    const start = new Date(`2000-01-01T${addInlineFormData.entry}:00`);
-    const end = new Date(`2000-01-01T${addInlineFormData.exit}:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) { alert('Horas inválidas.'); return; }
-    const elapsed = end.getTime() - start.getTime();
-    const mins = Math.floor(elapsed / 60000);
-    const hrs = Math.floor(mins / 60);
-    const finalTag = addInlineFormData.tag === 'Outro' ? addInlineFormData.customTag || '' : addInlineFormData.tag;
-    const newRecord: TimeRecord = {
+    if (!addingInlineDate || !addInlineFormData.startTime || !addInlineFormData.endTime || !addInlineFormData.clientId || !addInlineFormData.clientTag) { alert('Preencha todos os campos obrigatórios.'); return; }
+    if (addInlineFormData.clientTag === 'Outro' && !addInlineFormData.customTag) { alert('Insira a etiqueta personalizada.'); return; }
+    
+    const finalTag = addInlineFormData.clientTag === 'Outro' ? addInlineFormData.customTag || '' : addInlineFormData.clientTag;
+    const newRecord: Partial<TimeRecord> = {
       id: `rec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      date: addingInlineDate, entry: addInlineFormData.entry, exit: addInlineFormData.exit,
-      total: `${hrs}h ${mins % 60}m`, status: 'Manual',
-      client: addInlineFormData.client, tag: finalTag, comment: addInlineFormData.comment,
-      customTag: addInlineFormData.tag === 'Outro' ? addInlineFormData.customTag : undefined,
+      userId: user!.id,
+      date: addingInlineDate,
+      startTime: addInlineFormData.startTime,
+      endTime: addInlineFormData.endTime,
+      status: 'Manual',
+      clientId: addInlineFormData.clientId,
+      clientTag: finalTag, // Mantendo clientTag
+      comment: addInlineFormData.comment,
+      usedEntryTolerance: false,
+      usedExitTolerance: false
     };
-    saveRecordsToStorage([...records, newRecord]);
+    saveRecordsToStorage([...records, newRecord as TimeRecord]);
     setAddingInlineDate(null); setAddInlineFormData({});
     alert('Novo registro adicionado!');
   };
@@ -290,251 +340,362 @@ export default function FolhaPontoPage() {
   // --- Edição em Massa ---
   const handleDaySelectionChange = (dateString: string, isSelected: boolean) => {
     setSelectedDays(prev => isSelected ? [...prev, dateString] : prev.filter(d => d !== dateString));
-    setEditingRecordId(null); // Cancela edições inline ao selecionar/deselecionar dias
+    setEditingRecordId(null); 
     setAddingInlineDate(null);
   };
 
   const handleOpenBulkEditModal = () => {
-    if (selectedDays.length === 0) return;
-    setBulkEditFormData({ client: 'MAGNETIC PLACE', tag: '' }); // Reset form
+    if (selectedDays.length === 0) {
+        alert("Selecione pelo menos um dia para edição em massa.");
+        return;
+    }
+    setBulkEditFormData({ 
+        clientId: currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : ''), 
+        clientTag: '' 
+    });
     setBulkEditShowCustomTag(false);
     setShowBulkEditModal(true);
   };
 
-  const handleBulkEditFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleBulkEditFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setBulkEditFormData(prev => ({ ...prev, [name]: value }));
-    if (name === 'tag') setBulkEditShowCustomTag(value === 'Outro');
+    if (name === 'clientTag') setBulkEditShowCustomTag(value === 'Outro');
   };
 
   const resetBulkEditForm = () => {
     setShowBulkEditModal(false);
-    setBulkEditFormData({ client: 'MAGNETIC PLACE', tag: '' });
+    setBulkEditFormData({ clientId: currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : ''), clientTag: '' });
     setBulkEditShowCustomTag(false);
-    setSelectedDays([]); // Limpa seleção após salvar/cancelar
+    //setSelectedDays([]); // Não limpar seleção aqui, para permitir múltiplas edições em massa se necessário
   };
 
-  const handleBulkEditSubmit = (e: React.FormEvent) => {
+  const handleBulkEditSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!bulkEditFormData.entry || !bulkEditFormData.exit || !bulkEditFormData.client || !bulkEditFormData.tag || (bulkEditFormData.tag === 'Outro' && !bulkEditFormData.customTag)) {
-      alert('Preencha os campos obrigatórios para edição em massa.'); return;
+    if (!bulkEditFormData.clientId || !bulkEditFormData.clientTag || (bulkEditFormData.clientTag === 'Outro' && !bulkEditFormData.customTag)) {
+      alert("Preencha os campos de cliente e etiqueta para edição em massa.");
+      return;
     }
-    const start = new Date(`2000-01-01T${bulkEditFormData.entry}:00`);
-    const end = new Date(`2000-01-01T${bulkEditFormData.exit}:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
-      alert('Horas inválidas para edição em massa.'); return;
-    }
-    const elapsed = end.getTime() - start.getTime();
-    const mins = Math.floor(elapsed / 60000);
-    const hrs = Math.floor(mins / 60);
-    const finalTag = bulkEditFormData.tag === 'Outro' ? bulkEditFormData.customTag || '' : bulkEditFormData.tag;
-
-    const newRecordsToAdd: TimeRecord[] = selectedDays.map(dateString => ({
-      id: `rec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      date: dateString,
-      entry: bulkEditFormData.entry || '',
-      exit: bulkEditFormData.exit || '',
-      total: `${hrs}h ${mins % 60}m`,
-      status: 'Manual (Massa)',
-      client: bulkEditFormData.client || '',
-      tag: finalTag,
-      comment: bulkEditFormData.comment,
-      customTag: bulkEditFormData.tag === 'Outro' ? bulkEditFormData.customTag : undefined,
-    }));
-
-    saveRecordsToStorage([...records, ...newRecordsToAdd]);
-    alert(`${newRecordsToAdd.length} registro(s) adicionado(s) em massa.`);
+    const finalTag = bulkEditFormData.clientTag === 'Outro' ? bulkEditFormData.customTag || '' : bulkEditFormData.clientTag;
+    const updatedRecords = records.map(rec => {
+      if (selectedDays.includes(rec.date)) {
+        return { 
+            ...rec, 
+            clientId: bulkEditFormData.clientId, 
+            clientTag: finalTag, // Mantendo clientTag
+            comment: bulkEditFormData.comment !== undefined ? bulkEditFormData.comment : rec.comment // Atualiza comentário apenas se fornecido
+        } as TimeRecord;
+      }
+      return rec;
+    });
+    saveRecordsToStorage(updatedRecords);
+    alert("Registros selecionados atualizados com sucesso!");
     resetBulkEditForm();
+    setSelectedDays([]); // Limpar seleção após sucesso
   };
-
-  // --- Navegação Mês/Ano ---
-  const goToPreviousMonth = () => {
-    setSelectedMonth(prev => prev === 0 ? 11 : prev - 1);
-    setSelectedYear(prev => selectedMonth === 0 ? prev - 1 : prev);
-    setSelectedDays([]); // Limpa seleção ao mudar de mês
-  };
-  const goToNextMonth = () => {
-    setSelectedMonth(prev => prev === 11 ? 0 : prev + 1);
-    setSelectedYear(prev => selectedMonth === 11 ? prev + 1 : prev);
-    setSelectedDays([]); // Limpa seleção ao mudar de mês
-  };
-  const currentMonthYearName = useMemo(() => {
-    return new Date(selectedYear, selectedMonth).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-  }, [selectedMonth, selectedYear]);
 
   // --- Renderização ---
-  if (!isAuthenticated) return <div className="min-h-screen flex items-center justify-center"><p>Deve iniciar sessão.</p></div>;
-  if (isLoading) return <div className="min-h-screen flex items-center justify-center"><p>Carregando...</p></div>;
+  if (isLoading || authLoading) {
+    return <div className="container mx-auto px-4 py-8 text-center">Carregando dados da folha de ponto...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <div className="container mx-auto px-4 py-8 text-center">Acesso negado. Por favor, faça login.</div>;
+  }
 
   return (
-    <div className="max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
-      <h1 className="text-3xl font-bold text-gray-800 mb-6">Folha de Ponto</h1>
-
-      {/* Controles Superiores */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 bg-white p-4 rounded-lg shadow">
-        <div className="flex items-center space-x-2 mb-4 md:mb-0">
-          <button onClick={goToPreviousMonth} className="p-2 rounded hover:bg-gray-200 text-gray-600">&lt;</button>
-          <span className="text-lg font-semibold w-36 text-center capitalize">{currentMonthYearName}</span>
-          <button onClick={goToNextMonth} className="p-2 rounded hover:bg-gray-200 text-gray-600">&gt;</button>
-        </div>
-        <div className="flex items-center space-x-3">
-          {selectedDays.length > 0 && (
-            <button onClick={handleOpenBulkEditModal} className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded">
-              Editar {selectedDays.length} Dias
-            </button>
-          )}
-          <button onClick={() => setShowAddModal(true)} className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
-            + Adicionar (Modal)
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-800">Folha de Ponto</h1>
+        <div className="flex items-center space-x-2">
+          <select 
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            className="p-2 border rounded-md shadow-sm bg-white"
+          >
+            {Array.from({ length: 12 }, (_, i) => (
+              <option key={i} value={i}>{new Date(0, i).toLocaleString('pt-BR', { month: 'long' })}</option>
+            ))}
+          </select>
+          <select 
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="p-2 border rounded-md shadow-sm bg-white"
+          >
+            {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i).map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md shadow-md flex items-center transition duration-150 ease-in-out"
+          >
+            <AddIcon /> Adicionar Manual
           </button>
         </div>
       </div>
 
-      {/* Lista de Dias */}
-      <div className="space-y-6">
-        {daysInMonth.map(({ date, dateString }) => {
-          const dailyTotalString = calculateDailyTotal(groupedRecords[dateString]);
-          const isSelected = selectedDays.includes(dateString);
-          return (
-            <div key={dateString} className={`bg-white p-4 rounded-lg shadow ${isSelected ? 'ring-2 ring-yellow-400' : ''}`}>
-              <h2 className="text-lg font-semibold mb-3 border-b pb-2 flex justify-between items-center">
-                <label className="flex items-center flex-grow capitalize cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={(e) => handleDaySelectionChange(dateString, e.target.checked)}
-                    className="mr-3 h-4 w-4 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500"
-                  />
-                  {date.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric' })}
-                </label>
-                {dailyTotalString && (
-                  <span className="text-sm font-normal text-gray-500 ml-2 whitespace-nowrap">{dailyTotalString}</span>
-                )}
-              </h2>
-
-              {/* Registros Existentes */}
-              <ul className="space-y-3 mb-3">
-                {(groupedRecords[dateString] || []).map((record) => (
-                  <li key={record.id} className="p-3 bg-gray-50 rounded">
-                    {editingRecordId === record.id ? (
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div><label className="text-xs font-medium text-gray-600">Início</label><input type="time" name="entry" value={editFormData.entry || ''} onChange={handleEditFormChange} className="input-edit" /></div>
-                          <div><label className="text-xs font-medium text-gray-600">Fim</label><input type="time" name="exit" value={editFormData.exit || ''} onChange={handleEditFormChange} className="input-edit" /></div>
-                        </div>
-                        <div><label className="text-xs font-medium text-gray-600">Cliente</label><select name="client" value={editFormData.client || ''} onChange={handleEditFormChange} className="input-edit bg-white"><option value="">Selecione</option>{clients.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                        <div><label className="text-xs font-medium text-gray-600">Etiqueta</label><select name="tag" value={editFormData.tag || ''} onChange={handleEditFormChange} className="input-edit bg-white"><option value="">Selecione</option>{tags.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                        {editFormData.tag === 'Outro' && ( <div><label className="text-xs font-medium text-gray-600">Etiqueta Personalizada</label><input type="text" name="customTag" value={editFormData.customTag || ''} onChange={handleEditFormChange} required className="input-edit" /></div> )}
-                        <div><label className="text-xs font-medium text-gray-600">Comentário</label><textarea name="comment" value={editFormData.comment || ''} onChange={handleEditFormChange} rows={2} className="input-edit"></textarea></div>
-                        <div className="flex justify-end space-x-2 mt-2">
-                          <button onClick={handleCancelEdit} className="p-1 text-gray-500 hover:text-gray-700"><CancelIcon /></button>
-                          <button onClick={handleSaveEdit} className="p-1 text-green-500 hover:text-green-700"><SaveIcon /></button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
-                        <div className="flex-1 mb-2 md:mb-0 md:mr-4">
-                          <span className="font-mono text-sm md:text-base">{record.entry} - {record.exit}</span>
-                          <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 text-xs font-semibold rounded">{record.total}</span>
-                          <p className="text-sm text-gray-600 mt-1">{record.client} - {record.tag}{record.status !== 'Cronômetro' && <span className="ml-2 text-green-600 text-xs">({record.status})</span>}</p>
-                          {record.comment && <p className="text-xs text-gray-500 mt-1 italic">{record.comment}</p>}
-                        </div>
-                        <div className="flex space-x-2">
-                          <button onClick={() => handleEditClick(record)} className="p-1 text-gray-500 hover:text-blue-600"><EditIcon /></button>
-                          <button onClick={() => handleDeleteRecord(record.id)} className="p-1 text-gray-500 hover:text-red-600"><DeleteIcon /></button>
-                        </div>
-                      </div>
-                    )}
-                  </li>
-                ))}
-                {(!groupedRecords[dateString] || groupedRecords[dateString].length === 0) && addingInlineDate !== dateString && ( <p className="text-sm text-gray-500 italic">Nenhum registro.</p> )}
-              </ul>
-
-              {/* Formulário Adição Inline */}
-              {addingInlineDate === dateString && (
-                <div className="p-3 bg-green-50 rounded border border-green-200 space-y-3">
-                   <h3 className="text-sm font-semibold text-green-800">Adicionar Novo</h3>
-                   <div className="grid grid-cols-2 gap-3">
-                     <div><label className="text-xs font-medium text-gray-600">Início</label><input type="time" name="entry" value={addInlineFormData.entry || ''} onChange={handleAddInlineFormChange} className="input-edit" /></div>
-                     <div><label className="text-xs font-medium text-gray-600">Fim</label><input type="time" name="exit" value={addInlineFormData.exit || ''} onChange={handleAddInlineFormChange} className="input-edit" /></div>
-                   </div>
-                   <div><label className="text-xs font-medium text-gray-600">Cliente</label><select name="client" value={addInlineFormData.client || ''} onChange={handleAddInlineFormChange} className="input-edit bg-white"><option value="">Selecione</option>{clients.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                   <div><label className="text-xs font-medium text-gray-600">Etiqueta</label><select name="tag" value={addInlineFormData.tag || ''} onChange={handleAddInlineFormChange} className="input-edit bg-white"><option value="">Selecione</option>{tags.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                   {addInlineFormData.tag === 'Outro' && ( <div><label className="text-xs font-medium text-gray-600">Etiqueta Personalizada</label><input type="text" name="customTag" value={addInlineFormData.customTag || ''} onChange={handleAddInlineFormChange} required className="input-edit" /></div> )}
-                   <div><label className="text-xs font-medium text-gray-600">Comentário</label><textarea name="comment" value={addInlineFormData.comment || ''} onChange={handleAddInlineFormChange} rows={2} className="input-edit"></textarea></div>
-                   <div className="flex justify-end space-x-2 mt-2">
-                     <button onClick={handleCancelAddInline} className="p-1 text-gray-500 hover:text-gray-700"><CancelIcon /></button>
-                     <button onClick={handleSaveAddInline} className="p-1 text-green-500 hover:text-green-700"><SaveIcon /></button>
-                   </div>
-                </div>
-              )}
-
-              {/* Botão Adicionar Inline */}
-              {addingInlineDate !== dateString && (
-                <button onClick={() => handleStartAddInline(dateString)} className="mt-2 flex items-center text-sm text-blue-600 hover:text-blue-800">
-                  <AddIcon /> Adicionar Tramo
-                </button>
-              )}
-            </div>
-          )}
-        )}
-      </div>
-
-      {/* Modal Adição Manual */}
-      {showAddModal && (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
-             <h2 className="text-xl font-bold mb-4">Adicionar Registro Manual (Modal)</h2>
-             <form onSubmit={handleManualSubmit} className="space-y-4">
-                <div><label htmlFor="manualDate">Data</label><input type="date" id="manualDate" value={manualDate} onChange={e => setManualDate(e.target.value)} required className="input-edit" /></div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div><label htmlFor="manualStartTime">Hora Início</label><input type="time" id="manualStartTime" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} required className="input-edit" /></div>
-                  <div><label htmlFor="manualEndTime">Hora Fim</label><input type="time" id="manualEndTime" value={manualEndTime} onChange={e => setManualEndTime(e.target.value)} required className="input-edit" /></div>
-                </div>
-                <div><label htmlFor="manualClient">Cliente</label><select id="manualClient" value={manualClient} onChange={e => setManualClient(e.target.value)} required className="input-edit bg-white">{clients.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label htmlFor="manualTag">Etiqueta</label><select id="manualTag" value={manualTag} onChange={handleManualTagChange} required className="input-edit bg-white"><option value="">Selecione</option>{tags.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                {showManualCustomTag && ( <div><label htmlFor="manualCustomTag">Etiqueta Personalizada</label><input type="text" id="manualCustomTag" value={manualCustomTag} onChange={e => setManualCustomTag(e.target.value)} required={manualTag === 'Outro'} className="input-edit" /></div>)}
-                <div><label htmlFor="manualComment">Comentário</label><textarea id="manualComment" value={manualComment} onChange={e => setManualComment(e.target.value)} rows={2} className="input-edit"></textarea></div>
-               <div className="flex justify-end space-x-3 pt-4">
-                 <button type="button" onClick={resetManualForm} className="btn-secondary">Cancelar</button>
-                 <button type="submit" className="btn-primary bg-green-500 hover:bg-green-600">Salvar Registro</button>
-               </div>
-             </form>
-           </div>
-         </div>
-       )}
-
-      {/* Modal Edição em Massa */}
-      {showBulkEditModal && (
-         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-           <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg">
-             <h2 className="text-xl font-bold mb-4">Adicionar Horário a {selectedDays.length} Dias Selecionados</h2>
-             <form onSubmit={handleBulkEditSubmit} className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div><label htmlFor="bulkEntry">Hora Início</label><input type="time" id="bulkEntry" name="entry" value={bulkEditFormData.entry || ''} onChange={handleBulkEditFormChange} required className="input-edit" /></div>
-                  <div><label htmlFor="bulkExit">Hora Fim</label><input type="time" id="bulkExit" name="exit" value={bulkEditFormData.exit || ''} onChange={handleBulkEditFormChange} required className="input-edit" /></div>
-                </div>
-                <div><label htmlFor="bulkClient">Cliente</label><select id="bulkClient" name="client" value={bulkEditFormData.client || ''} onChange={handleBulkEditFormChange} required className="input-edit bg-white">{clients.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
-                <div><label htmlFor="bulkTag">Etiqueta</label><select id="bulkTag" name="tag" value={bulkEditFormData.tag || ''} onChange={handleBulkEditFormChange} required className="input-edit bg-white"><option value="">Selecione</option>{tags.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-                {bulkEditShowCustomTag && ( <div><label htmlFor="bulkCustomTag">Etiqueta Personalizada</label><input type="text" id="bulkCustomTag" name="customTag" value={bulkEditFormData.customTag || ''} onChange={handleBulkEditFormChange} required={bulkEditFormData.tag === 'Outro'} className="input-edit" /></div>)}
-                <div><label htmlFor="bulkComment">Comentário</label><textarea id="bulkComment" name="comment" value={bulkEditFormData.comment || ''} onChange={handleBulkEditFormChange} rows={2} className="input-edit"></textarea></div>
-               <div className="flex justify-end space-x-3 pt-4">
-                 <button type="button" onClick={resetBulkEditForm} className="btn-secondary">Cancelar</button>
-                 <button type="submit" className="btn-primary bg-yellow-500 hover:bg-yellow-600">Adicionar em Massa</button>
-               </div>
-             </form>
-           </div>
-         </div>
+      {selectedDays.length > 0 && (
+        <div className="mb-4 flex justify-end">
+            <button 
+                onClick={handleOpenBulkEditModal}
+                className="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded-md shadow-md transition duration-150 ease-in-out"
+            >
+                Editar Selecionados ({selectedDays.length} dia(s))
+            </button>
+        </div>
       )}
 
-      {/* Estilos Globais */}
-      <style jsx global>{`
-        .input-edit { margin-top: 0.25rem; display: block; width: 100%; border: 1px solid #d1d5db; border-radius: 0.375rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); padding: 0.25rem 0.5rem; font-size: 0.875rem; }
-        textarea.input-edit { padding: 0.5rem; }
-        .btn-primary { background-color: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 0.25rem; font-weight: 600; transition: background-color 0.2s; }
-        .btn-primary:hover { background-color: #2563eb; }
-        .btn-secondary { background-color: #e5e7eb; color: #1f2937; padding: 0.5rem 1rem; border-radius: 0.25rem; font-weight: 600; transition: background-color 0.2s; }
-        .btn-secondary:hover { background-color: #d1d5db; }
-      `}</style>
+      {/* Modal de Adição Manual */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center p-4">
+          <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-lg transform transition-all">
+            <h2 className="text-2xl font-semibold mb-6 text-gray-700">Adicionar Registro Manual</h2>
+            <form onSubmit={handleManualSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="manualDate" className="block text-sm font-medium text-gray-700">Data</label>
+                <input type="date" id="manualDate" value={manualDate} onChange={e => setManualDate(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="manualStartTime" className="block text-sm font-medium text-gray-700">Entrada</label>
+                  <input type="time" id="manualStartTime" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+                <div>
+                  <label htmlFor="manualEndTime" className="block text-sm font-medium text-gray-700">Saída</label>
+                  <input type="time" id="manualEndTime" value={manualEndTime} onChange={e => setManualEndTime(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="manualClientId" className="block text-sm font-medium text-gray-700">Cliente</label>
+                <select id="manualClientId" name="manualClientId" value={manualClientId} onChange={e => setManualClientId(e.target.value)} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                  <option value="">Selecione um cliente</option>
+                  {availableClientsForTimesheet.map(client => (
+                    <option key={client.id} value={client.id}>{client.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="manualTag" className="block text-sm font-medium text-gray-700">Etiqueta (Projeto/Tarefa)</label>
+                <select id="manualTag" value={manualTag} onChange={handleManualTagChange} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                  <option value="">Selecione uma etiqueta</option>
+                  {tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+                </select>
+              </div>
+              {showManualCustomTag && (
+                <div>
+                  <label htmlFor="manualCustomTag" className="block text-sm font-medium text-gray-700">Etiqueta Personalizada</label>
+                  <input type="text" id="manualCustomTag" value={manualCustomTag} onChange={e => setManualCustomTag(e.target.value)} required={manualTag === 'Outro'} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+              )}
+              <div>
+                <label htmlFor="manualComment" className="block text-sm font-medium text-gray-700">Comentário (Opcional)</label>
+                <textarea id="manualComment" value={manualComment} onChange={e => setManualComment(e.target.value)} rows={2} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4">
+                <button type="button" onClick={resetManualForm} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-300">Cancelar</button>
+                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md border border-transparent">Salvar Registro</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição em Massa */}
+      {showBulkEditModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center p-4">
+          <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-lg transform transition-all">
+            <h2 className="text-2xl font-semibold mb-6 text-gray-700">Editar Registros Selecionados ({selectedDays.length} dia(s))</h2>
+            <form onSubmit={handleBulkEditSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="bulkEditClientId" className="block text-sm font-medium text-gray-700">Novo Cliente</label>
+                <select id="bulkEditClientId" name="clientId" value={bulkEditFormData.clientId} onChange={handleBulkEditFormChange} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                  <option value="">Selecione um cliente</option>
+                  {availableClientsForTimesheet.map(client => (
+                    <option key={client.id} value={client.id}>{client.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="bulkEditTag" className="block text-sm font-medium text-gray-700">Nova Etiqueta (Projeto/Tarefa)</label>
+                <select id="bulkEditTag" name="clientTag" value={bulkEditFormData.clientTag} onChange={handleBulkEditFormChange} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                  <option value="">Selecione uma etiqueta</option>
+                  {tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+                </select>
+              </div>
+              {bulkEditShowCustomTag && (
+                <div>
+                  <label htmlFor="bulkEditCustomTag" className="block text-sm font-medium text-gray-700">Etiqueta Personalizada</label>
+                  <input type="text" id="bulkEditCustomTag" name="customTag" value={bulkEditFormData.customTag} onChange={handleBulkEditFormChange} required={bulkEditFormData.clientTag === 'Outro'} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
+                </div>
+              )}
+              <div>
+                <label htmlFor="bulkEditComment" className="block text-sm font-medium text-gray-700">Novo Comentário (Opcional - sobrescreverá existentes)</label>
+                <textarea id="bulkEditComment" name="comment" value={bulkEditFormData.comment || ''} onChange={handleBulkEditFormChange} rows={2} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4">
+                <button type="button" onClick={resetBulkEditForm} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md border border-gray-300">Cancelar</button>
+                <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-md border border-transparent">Aplicar Alterações</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tabela de Registros */}
+      <div className="bg-white shadow-lg rounded-lg overflow-hidden">
+        <div className="overflow-x-auto">
+          {daysInMonth.length === 0 && !isLoading && (
+            <p className="p-6 text-center text-gray-500">Nenhum registro encontrado para este mês.</p>
+          )}
+          {daysInMonth.map(({ date, dateString }) => {
+            const dailyRecords = groupedRecords[dateString];
+            const isDaySelected = selectedDays.includes(dateString);
+            return (
+              <div key={dateString} className={`mb-1 ${isDaySelected ? 'bg-blue-50' : ''}`}>
+                <div className={`flex justify-between items-center p-3 border-b border-gray-200 ${dailyRecords && dailyRecords.length > 0 ? 'bg-gray-100' : 'bg-gray-50'}`}>
+                  <div className="flex items-center">
+                    <input 
+                        type="checkbox" 
+                        checked={isDaySelected}
+                        onChange={(e) => handleDaySelectionChange(dateString, e.target.checked)}
+                        className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-3"
+                    />
+                    <h3 className="text-lg font-semibold text-gray-700">
+                      {dateString} <span className="text-sm font-normal text-gray-500">({date.toLocaleDateString('pt-BR', { weekday: 'long' })})</span>
+                    </h3>
+                  </div>
+                  <div className="flex items-center">
+                    <span className="text-sm font-medium text-gray-600 mr-4">{calculateDailyTotal(dailyRecords)}</span>
+                    {addingInlineDate !== dateString && (
+                        <button 
+                            onClick={() => handleStartAddInline(dateString)}
+                            className="text-sm bg-green-100 hover:bg-green-200 text-green-700 font-semibold py-1 px-3 rounded-md flex items-center transition duration-150 ease-in-out"
+                        >
+                            <AddIcon /> Adicionar Linha
+                        </button>
+                    )}
+                  </div>
+                </div>
+                
+                {dailyRecords && dailyRecords.length > 0 && (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Entrada</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Saída</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Total</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Etiqueta</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comentário</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Ações</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {dailyRecords.map((record) => (
+                        editingRecordId === record.id ? (
+                          // Linha de Edição Inline
+                          <tr key={`${record.id}-edit`} className="bg-yellow-50">
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <input type="time" name="startTime" value={editFormData.startTime || ''} onChange={handleEditFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm" />
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <input type="time" name="endTime" value={editFormData.endTime || ''} onChange={handleEditFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm" />
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{/* Total é calculado no save */}</td>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <select name="clientId" value={editFormData.clientId || ''} onChange={handleEditFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm bg-white">
+                                <option value="">Selecione</option>
+                                {availableClientsForTimesheet.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <select name="clientTag" value={editFormData.clientTag || ''} onChange={e => {handleEditFormChange(e); if(e.target.value !== 'Outro') setEditFormData(prev => ({...prev, customTag: ''})) }} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm bg-white">
+                                <option value="">Selecione</option>
+                                {tags.map(t => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                              {editFormData.clientTag === 'Outro' && 
+                                <input type="text" name="customTag" placeholder="Etiqueta Específica" value={editFormData.customTag || ''} onChange={handleEditFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm" />
+                              }
+                            </td>
+                            <td className="px-4 py-2">
+                              <textarea name="comment" value={editFormData.comment || ''} onChange={handleEditFormChange} rows={1} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm"></textarea>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
+                              <div className="flex space-x-2">
+                                <button onClick={handleSaveEdit} className="text-green-600 hover:text-green-900"><SaveIcon /></button>
+                                <button onClick={handleCancelEdit} className="text-red-600 hover:text-red-900"><CancelIcon /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          // Linha de Visualização
+                          <tr key={record.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{record.startTime}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{record.endTime}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                                {record.totalWorkTime ? `${Math.floor(record.totalWorkTime / 60)}h ${record.totalWorkTime % 60}m` : '-'}
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{allClients.find(c=>c.id === record.clientId)?.name || record.clientId || 'N/A'}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{record.clientTag}</td>
+                            <td className="px-4 py-2 text-sm text-gray-700 max-w-xs truncate" title={record.comment}>{record.comment}</td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
+                              <div className="flex space-x-2">
+                                <button onClick={() => handleEditClick(record)} className="text-indigo-600 hover:text-indigo-900"><EditIcon /></button>
+                                <button onClick={() => handleDeleteRecord(record.id)} className="text-red-600 hover:text-red-900"><DeleteIcon /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      ))}
+                      
+                      {/* Linha de Adição Inline */}
+                      {addingInlineDate === dateString && (
+                        <tr className="bg-green-50">
+                           <td className="px-4 py-2 whitespace-nowrap">
+                              <input type="time" name="startTime" value={addInlineFormData.startTime || ''} onChange={handleAddInlineFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm" />
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <input type="time" name="endTime" value={addInlineFormData.endTime || ''} onChange={handleAddInlineFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm" />
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500"></td>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <select name="clientId" value={addInlineFormData.clientId || ''} onChange={handleAddInlineFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm bg-white">
+                                <option value="">Selecione</option>
+                                {availableClientsForTimesheet.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap">
+                              <select name="clientTag" value={addInlineFormData.clientTag || ''} onChange={e => {handleAddInlineFormChange(e); if(e.target.value !== 'Outro') setAddInlineFormData(prev => ({...prev, customTag: ''})) }} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm bg-white">
+                                <option value="">Selecione</option>
+                                {tags.map(t => <option key={t} value={t}>{t}</option>)}
+                              </select>
+                              {addInlineFormData.clientTag === 'Outro' && 
+                                <input type="text" name="customTag" placeholder="Etiqueta Específica" value={addInlineFormData.customTag || ''} onChange={handleAddInlineFormChange} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm" />
+                              }
+                            </td>
+                            <td className="px-4 py-2">
+                              <textarea name="comment" value={addInlineFormData.comment || ''} onChange={handleAddInlineFormChange} rows={1} className="mt-1 block w-full px-2 py-1 border border-gray-300 rounded-md shadow-sm text-sm"></textarea>
+                            </td>
+                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
+                              <div className="flex space-x-2">
+                                <button onClick={handleSaveAddInline} className="text-green-600 hover:text-green-900"><SaveIcon /></button>
+                                <button onClick={handleCancelAddInline} className="text-red-600 hover:text-red-900"><CancelIcon /></button>
+                              </div>
+                            </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
+                {(!dailyRecords || dailyRecords.length === 0) && addingInlineDate !== dateString && (
+                    <p className="px-4 py-3 text-sm text-gray-500">Nenhum registro para este dia.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
