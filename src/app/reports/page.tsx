@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import html2canvas from 'html2canvas'; // Adicionar importação html2canvas
+import html2canvas from 'html2canvas';
 import { useAuth } from '../hooks/useAuth';
 import {
     getEmployeesData,
@@ -15,9 +15,10 @@ import {
     formatMinutesToHoursMinutes,
     TimeRecord,
     Employee,
-    // EmployeeReportData, // Removido se não usado diretamente aqui
-    // DailyReportRecord // Removido se não usado diretamente aqui
+    calculateReportStats,
 } from './page_helpers';
+
+import { dailyReportFields, summaryReportFields, ReportFieldOption } from './report_fields_config';
 
 import {
     Chart as ChartJS,
@@ -29,6 +30,7 @@ import {
     Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import Image from 'next/image';
 
 ChartJS.register(
     CategoryScale,
@@ -40,14 +42,16 @@ ChartJS.register(
 );
 
 interface DailyReportRecord {
-    employeeName?: string; // Adicionado para consistência com o uso
+    employeeName?: string;
     date: string;
     entryTime: string;
     exitTime: string;
     totalWorkTime: number;
     client: string;
-    tag: string;
+    funcao: string;
     comment?: string;
+    employeeId?: string;
+    department?: string;
 }
 
 interface SummaryReportRecord {
@@ -58,6 +62,15 @@ interface SummaryReportRecord {
   totalHoursFormatted: string;
   avgHoursFormatted: string;
   totalMinutes: number;
+}
+
+interface SelectedFields {
+  [key: string]: boolean;
+}
+
+interface ReportStats {
+    totalHoursWorked: string;
+    totalDaysWorked: number;
 }
 
 export default function ReportsPage() {
@@ -78,8 +91,11 @@ export default function ReportsPage() {
   const [endDate, setEndDate] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadFormat, setDownloadFormat] = useState('');
+  const [showFieldSelection, setShowFieldSelection] = useState(false);
+  const [selectedFields, setSelectedFields] = useState<SelectedFields>({});
+  const [reportStats, setReportStats] = useState<ReportStats | null>(null);
 
-  const reportContentRef = useRef<HTMLDivElement>(null); // Ref para o conteúdo do relatório a ser capturado
+  const reportContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -99,32 +115,66 @@ export default function ReportsPage() {
         const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
         setEndDate(today.toISOString().split('T')[0]);
         setStartDate(firstDayOfMonth.toISOString().split('T')[0]);
+        
+        initializeSelectedFields(reportType);
       } catch (error) {
         console.error("Erro ao carregar dados iniciais:", error);
       }
     }
   }, [user, isAdmin]);
 
-  const debugLocalStorage = () => {
-    try {
-      const data = localStorage.getItem("timetracker_employees");
-      console.log("--- DEBUG LOCALSTORAGE ---");
-      console.log("Raw data:", data);
-      if (data) {
-        console.log("Parsed data:", JSON.parse(data));
+  const loadSelectedFieldsFromStorage = (type: string): SelectedFields | null => {
+    if (typeof window !== 'undefined') {
+      const storedFields = localStorage.getItem(`report_${type}_selectedFields`);
+      if (storedFields) {
+        return JSON.parse(storedFields);
       }
-      console.log("--- FIM DEBUG LOCALSTORAGE ---");
-      alert("Conteúdo do localStorage 'timetracker_employees' logado no console.");
-    } catch (error) {
-      console.error("Erro ao ler localStorage:", error);
-      alert("Erro ao tentar ler o localStorage.");
     }
+    return null;
+  };
+
+  const saveSelectedFieldsToStorage = (type: string, fields: SelectedFields) => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`report_${type}_selectedFields`, JSON.stringify(fields));
+    }
+  };
+
+  const initializeSelectedFields = (type: string) => {
+    const storedFields = loadSelectedFieldsFromStorage(type);
+    if (storedFields) {
+      setSelectedFields(storedFields);
+    } else {
+      const fieldsConfig = type === 'daily' ? dailyReportFields : summaryReportFields;
+      const initialSelectedFields: SelectedFields = {};
+      if (fieldsConfig && Array.isArray(fieldsConfig)) {
+        fieldsConfig.forEach(field => {
+          initialSelectedFields[field.id] = field.defaultSelected;
+        });
+      } else {
+        console.error(`Erro Crítico: A configuração de campos (fieldsConfig) para o tipo de relatório '${type}' não foi encontrada ou não é um array. Verifique a importação de dailyReportFields e summaryReportFields.`);
+      }
+      setSelectedFields(initialSelectedFields);
+      saveSelectedFieldsToStorage(type, initialSelectedFields);
+    }
+  };
+
+  useEffect(() => {
+    initializeSelectedFields(reportType);
+  }, [reportType]);
+
+  const handleFieldSelectionChange = (fieldId: string) => {
+    const newSelectedFields = {
+      ...selectedFields,
+      [fieldId]: !selectedFields[fieldId],
+    };
+    setSelectedFields(newSelectedFields);
+    saveSelectedFieldsToStorage(reportType, newSelectedFields);
   };
 
   const generateReportData = (type: string, range: string, employeeIdFilter: string, selectedClientFilter: string, isCustomRange: boolean, customStartDateStr: string, customEndDateStr: string) => {
     const allTimeRecords = getAllTimeRecordsData();
     if (!allTimeRecords || allTimeRecords.length === 0) {
-        return { type, data: [], chartData: null, startDate: '', endDate: '', employee: employeeIdFilter, client: selectedClientFilter };
+        return { type, data: [], chartData: null, startDate: '', endDate: '', employee: employeeIdFilter, client: selectedClientFilter, stats: null };
     }
     const now = new Date();
     let filterStartDate = new Date();
@@ -135,16 +185,43 @@ export default function ReportsPage() {
       filterEndDate = new Date(customEndDateStr + 'T23:59:59');
     } else {
       switch (range) {
-        case 'week': filterStartDate.setDate(now.getDate() - now.getDay() - 6); filterStartDate.setHours(0,0,0,0); break; // Start of last week (Sunday)
-        case 'month': 
-            filterStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0,0,0,0);
-            filterEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23,59,59,999); // Last day of previous month
+        case 'today':
+            filterStartDate = new Date(new Date().setHours(0, 0, 0, 0));
+            filterEndDate = new Date(new Date().setHours(23, 59, 59, 999));
+            break;
+        case 'yesterday':
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            filterStartDate = new Date(yesterday.setHours(0, 0, 0, 0));
+            filterEndDate = new Date(yesterday.setHours(23, 59, 59, 999));
+            break;
+        case 'current_week':
+            const currentWeekStart = new Date(now);
+            currentWeekStart.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)); // Adjust for Sunday as start or Monday
+            filterStartDate = new Date(currentWeekStart.setHours(0,0,0,0));
+            const currentWeekEnd = new Date(currentWeekStart);
+            currentWeekEnd.setDate(currentWeekStart.getDate() + 6);
+            filterEndDate = new Date(currentWeekEnd.setHours(23,59,59,999));
+            break;
+        case 'last_week':
+            const lastWeekEnd = new Date(now);
+            lastWeekEnd.setDate(now.getDate() - now.getDay() - (now.getDay() === 0 ? 0 : 1) + (now.getDay() === 0 ? 0 : 0) ); // Last day of last week (Saturday or Sunday)
+            lastWeekEnd.setHours(23,59,59,999);
+            const lastWeekStart = new Date(lastWeekEnd);
+            lastWeekStart.setDate(lastWeekEnd.getDate() - 6);
+            lastWeekStart.setHours(0,0,0,0);
+            filterStartDate = lastWeekStart;
+            filterEndDate = lastWeekEnd;
             break;
         case 'current_month':
         default:
           filterStartDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-          filterEndDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59); // Last day of current month
+          filterEndDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
           break;
+        case 'last_month': 
+            filterStartDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0,0,0,0);
+            filterEndDate = new Date(now.getFullYear(), now.getMonth(), 0, 23,59,59,999);
+            break;
       }
     }
 
@@ -160,15 +237,21 @@ export default function ReportsPage() {
     const allEmployeesList = getEmployeesData();
     let finalData: DailyReportRecord[] | SummaryReportRecord[] = [];
     let chartData = null;
+    let calculatedStats: ReportStats | null = null;
 
     if (type === 'daily') {
-        const employeeReportMap: Record<string, { name: string; records: Omit<DailyReportRecord, 'employeeName'>[] }> = {};
+        const employeeReportMap: Record<string, { name: string; id?: string; department?: string; records: Omit<DailyReportRecord, 'employeeName' | 'employeeId' | 'department'>[] }> = {};
         filteredRecords.forEach(record => {
             const userId = record.userId;
             if (!userId) return;
             if (!employeeReportMap[userId]) {
                 const employee = allEmployeesList.find(emp => emp.id === userId);
-                employeeReportMap[userId] = { name: employee ? employee.name : `ID: ${userId}`, records: [] };
+                employeeReportMap[userId] = { 
+                    name: employee ? employee.name : `ID: ${userId}`, 
+                    id: employee?.id,
+                    department: employee?.department,
+                    records: [] 
+                };
             }
             employeeReportMap[userId].records.push({
                 date: record.date,
@@ -176,7 +259,7 @@ export default function ReportsPage() {
                 exitTime: record.exitTime || record.exit,
                 totalWorkTime: record.totalWorkTime || 0,
                 client: record.client,
-                tag: record.tag,
+                funcao: record.funcao || record.tag,
                 comment: record.comment
             });
         });
@@ -186,8 +269,14 @@ export default function ReportsPage() {
                 const dateB = parseDateString(b.date);
                 return dateB && dateA ? dateB.getTime() - dateA.getTime() : 0;
             });
-            return data.records.map(record => ({ ...record, employeeName: data.name }));
+            return data.records.map(record => ({ 
+                ...record, 
+                employeeName: data.name,
+                employeeId: data.id,
+                department: data.department
+            }));
         });
+        calculatedStats = calculateReportStats(filteredRecords, allEmployeesList, employeeIdFilter);
     } else if (type === 'summary') {
         const summaryMap: Record<string, { name: string; department?: string; totalMinutes: number; workedDaysSet: Set<string> }> = {};
         filteredRecords.forEach(record => {
@@ -230,6 +319,7 @@ export default function ReportsPage() {
                 borderWidth: 1,
             }],
         };
+        calculatedStats = calculateReportStats(filteredRecords, allEmployeesList, employeeIdFilter);
     }
     return {
       type,
@@ -240,7 +330,9 @@ export default function ReportsPage() {
       endDate: filterEndDate.toISOString().split("T")[0],
       generatedAt: new Date().toISOString(),
       data: finalData,
-      chartData: chartData
+      chartData: chartData,
+      selectedFields: selectedFields,
+      stats: calculatedStats
     };
   };
 
@@ -248,10 +340,12 @@ export default function ReportsPage() {
     setIsGenerating(true);
     setReportGenerated(false);
     setReportData(null);
+    setReportStats(null);
     setTimeout(() => {
       try {
         const data = generateReportData(reportType, dateRange, employeeFilter, clientFilter, customDateRange, startDate, endDate);
         setReportData(data);
+        setReportStats(data.stats);
         setReportGenerated(true);
       } catch (error) {
         console.error("Erro ao gerar dados do relatório:", error);
@@ -273,33 +367,29 @@ export default function ReportsPage() {
 
     setIsDownloading(true);
     setDownloadFormat(format);
-    const reportTitle = `Relatorio_${reportData.type}_${reportData.employee}_${reportData.client}_${reportData.startDate}_a_${reportData.endDate}`.replace(/[^a-zA-Z0-9_]/g, '-');
+    const reportTitle = `Relatorio_${reportData.type}_${reportData.employee === 'all' ? 'TodosFuncionarios' : reportData.employee}_${reportData.client === 'all' ? 'TodosClientes' : reportData.client}_${reportData.startDate}_a_${reportData.endDate}`.replace(/[^a-zA-Z0-9_]/g, '-');
 
     try {
         if (format === 'pdf') {
-            const canvas = await html2canvas(reportContentRef.current, { scale: 2 });
+            const canvas = await html2canvas(reportContentRef.current, { 
+                scale: 2,
+                logging: true,
+                useCORS: true,
+                windowWidth: reportContentRef.current.scrollWidth,
+                windowHeight: reportContentRef.current.scrollHeight
+            });
             const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pdf = new jsPDF('l', 'mm', 'a4');
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const pdfHeight = pdf.internal.pageSize.getHeight();
             const imgWidth = canvas.width;
             const imgHeight = canvas.height;
             const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
             const imgX = (pdfWidth - imgWidth * ratio) / 2;
-            const imgY = 10; // Margin top
+            const imgY = 5;
 
             pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
             
-            // Adicionar título e informações do relatório ao PDF
-            pdf.setFontSize(16);
-            pdf.text(`Relatório ${reportData.type === 'daily' ? 'Diário Detalhado' : 'Resumo'}`, pdfWidth / 2, imgY + (imgHeight * ratio) + 15 , { align: 'center' });
-            pdf.setFontSize(10);
-            pdf.text(`Período: ${reportData.startDate} a ${reportData.endDate}`, pdfWidth / 2, imgY + (imgHeight * ratio) + 22, { align: 'center' });
-            if (isAdmin) {
-                 pdf.text(`Funcionário: ${reportData.employee === 'all' ? 'Todos' : employees.find(e => e.id === reportData.employee)?.name || reportData.employee}`, pdfWidth / 2, imgY + (imgHeight * ratio) + 29, { align: 'center' });
-            }
-            pdf.text(`Cliente: ${reportData.client === 'all' ? 'Todos' : reportData.client}`, pdfWidth / 2, imgY + (imgHeight * ratio) + (isAdmin ? 36 : 29), { align: 'center' });
-
             const pdfBlob = pdf.output('blob');
             const pdfUrl = URL.createObjectURL(pdfBlob);
             const link = document.createElement('a');
@@ -312,31 +402,49 @@ export default function ReportsPage() {
 
         } else if (format === 'excel') {
             let ws_data: any[][] = [];
+            const currentFieldsConfigExcel = reportData.type === 'daily' ? dailyReportFields : summaryReportFields;
+            
+            const headers = (currentFieldsConfigExcel || [])
+                .filter(field => reportData.selectedFields[field.id])
+                .map(field => field.label);
+            ws_data.push(headers);
+            
             if (reportData.type === 'daily') {
-                ws_data.push(["Funcionário", "Data", "Entrada", "Saída", "Total (fmt)", "Cliente", "Etiqueta", "Comentário"]);
                 reportData.data.forEach((rec: DailyReportRecord) => {
-                    ws_data.push([
-                        rec.employeeName || '-',
-                        rec.date,
-                        rec.entryTime,
-                        rec.exitTime,
-                        formatMinutesToHoursMinutes(rec.totalWorkTime),
-                        rec.client,
-                        rec.tag,
-                        rec.comment || ''
-                    ]);
+                    const row: any[] = [];
+                    (currentFieldsConfigExcel || []).forEach(field => {
+                        if (reportData.selectedFields[field.id]) {
+                            switch (field.id) {
+                                case 'employeeName': row.push(rec.employeeName || '-'); break;
+                                case 'date': row.push(rec.date); break;
+                                case 'entryTime': row.push(rec.entryTime); break;
+                                case 'exitTime': row.push(rec.exitTime); break;
+                                case 'totalWorkTime': row.push(formatMinutesToHoursMinutes(rec.totalWorkTime)); break;
+                                case 'client': row.push(rec.client); break;
+                                case 'funcao': row.push(rec.funcao); break;
+                                case 'comment': row.push(rec.comment || ''); break;
+                                default: row.push('');
+                            }
+                        }
+                    });
+                    ws_data.push(row);
                 });
             } else { // Summary
-                ws_data.push(["Funcionário", "Departamento", "Dias Trab.", "Total Horas", "Média Diária", "Total Minutos"]);
                 reportData.data.forEach((rec: SummaryReportRecord) => {
-                    ws_data.push([
-                        rec.name,
-                        rec.department || '-',
-                        rec.workedDays,
-                        rec.totalHoursFormatted,
-                        rec.avgHoursFormatted,
-                        rec.totalMinutes
-                    ]);
+                    const row: any[] = [];
+                     (currentFieldsConfigExcel || []).forEach(field => {
+                        if (reportData.selectedFields[field.id]) {
+                            switch (field.id) {
+                                case 'name': row.push(rec.name); break;
+                                case 'department': row.push(rec.department || '-'); break;
+                                case 'workedDays': row.push(rec.workedDays); break;
+                                case 'totalHoursFormatted': row.push(rec.totalHoursFormatted); break;
+                                case 'avgHoursFormatted': row.push(rec.avgHoursFormatted); break;
+                                default: row.push('');
+                            }
+                        }
+                    });
+                    ws_data.push(row);
                 });
             }
             const ws = XLSX.utils.aoa_to_sheet(ws_data);
@@ -345,187 +453,257 @@ export default function ReportsPage() {
             XLSX.writeFile(wb, `${reportTitle}.xlsx`);
         }
     } catch (error) {
-      console.error(`Erro ao baixar relatório como ${format}:`, error);
-      alert(`Ocorreu um erro ao baixar o relatório como ${format}. Verifique o console para detalhes.`);
+        console.error("Erro ao baixar o relatório:", error);
+        alert("Ocorreu um erro ao tentar baixar o relatório.");
     } finally {
-      setIsDownloading(false);
-      setDownloadFormat('');
+        setIsDownloading(false);
+        setDownloadFormat('');
     }
   };
 
-  const handleDateRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    setDateRange(value);
-    setCustomDateRange(value === 'custom');
-    if (value !== 'custom') {
-        const today = new Date();
-        const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        setEndDate(today.toISOString().split('T')[0]);
-        setStartDate(firstDayOfMonth.toISOString().split('T')[0]);
-    }
+  const StatCard: React.FC<{ title: string; value: string | number; bgColor?: string }> = ({ title, value, bgColor = 'bg-gray-100' }) => (
+    <div className={`p-4 rounded-lg shadow-md ${bgColor} text-center`}>
+      <h3 className="text-sm font-semibold text-gray-600">{title}</h3>
+      <p className="text-2xl font-bold text-gray-800">{value}</p>
+    </div>
+  );
+
+  const renderReportContent = () => {
+    if (!reportGenerated || !reportData) return <p className="text-center text-gray-500">Nenhum relatório gerado. Por favor, configure e clique em "Gerar Relatório".</p>;
+    if (reportData.data.length === 0) return <p className="text-center text-gray-500">Nenhum dado encontrado para os filtros selecionados.</p>;    
+
+    const currentFieldsConfigRender = reportData.type === 'daily' ? dailyReportFields : summaryReportFields;
+    const activeFields = (currentFieldsConfigRender || []).filter(field => reportData.selectedFields[field.id]);
+
+    const employeeDetails = reportData.employee !== 'all' ? employees.find(e => e.id === reportData.employee) : null;
+
+    return (
+      <div ref={reportContentRef} className="p-6 bg-white rounded-lg shadow-xl">
+        {/* Report Header */}
+        <div className="mb-6 pb-4 border-b border-gray-200">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-semibold text-gray-700">
+                    Relatório {reportData.type === 'daily' ? 'Diário Detalhado' : 'Resumido de Horas'}
+                </h2>
+                <Image src="/images/company_logo.jpg" alt="Logo da Empresa" width={100} height={40} className="object-contain"/>
+            </div>
+            <div className="text-sm text-gray-600 grid grid-cols-2 gap-2">
+                <p><strong>Período:</strong> {reportData.startDate} a {reportData.endDate}</p>
+                {isAdmin && <p><strong>Funcionário:</strong> {reportData.employee === 'all' ? 'Todos' : employeeDetails?.name || reportData.employee}</p>}
+                <p><strong>Cliente:</strong> {reportData.client === 'all' ? 'Todos' : reportData.client}</p>
+                <p><strong>Gerado em:</strong> {new Date(reportData.generatedAt).toLocaleString('pt-BR')}</p>
+            </div>
+        </div>
+
+        {/* Employee Info Section - Inspired by reference */}
+        {reportData.employee !== 'all' && employeeDetails && (
+            <div className="mb-6 p-4 border border-gray-200 rounded-md bg-gray-50">
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">Detalhes do Funcionário</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                    <p><strong>ID:</strong> {employeeDetails.id}</p>
+                    <p><strong>Nome:</strong> {employeeDetails.name}</p>
+                    <p><strong>Email:</strong> {employeeDetails.email}</p>
+                    <p><strong>Departamento:</strong> {employeeDetails.department || 'N/A'}</p>
+                </div>
+            </div>
+        )}
+
+        {/* Stats Cards Section */}
+        {reportStats && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <StatCard title="Total Horas Trabalhadas" value={reportStats.totalHoursWorked} bgColor="bg-blue-100" />
+                <StatCard title="Total Dias Trabalhados" value={reportStats.totalDaysWorked} bgColor="bg-green-100" />
+            </div>
+        )}
+
+        {/* Report Table / Chart */}
+        {reportData.type === 'daily' && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  {(activeFields || []).map(field => (
+                    <th key={field.id} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {field.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {reportData.data.map((rec: DailyReportRecord, index: number) => (
+                  <tr key={index}>
+                    {(activeFields || []).map(field => (
+                      <td key={field.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        {field.id === 'totalWorkTime' ? formatMinutesToHoursMinutes(rec.totalWorkTime) : (rec as any)[field.id] || '-'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {reportData.type === 'summary' && reportData.chartData && (
+          <div className="bg-white p-4 rounded shadow">
+            <h3 className="text-lg font-semibold mb-2">Gráfico de Horas por Funcionário</h3>
+            <Bar options={{ responsive: true, plugins: { legend: { position: 'top' as const }, title: { display: true, text: 'Total de Horas Trabalhadas por Funcionário' } } }} data={reportData.chartData} />
+            <div className="overflow-x-auto mt-6">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            {(activeFields || []).map(field => (
+                                <th key={field.id} scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                {field.label}
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {reportData.data.map((rec: SummaryReportRecord, index: number) => (
+                        <tr key={index}>
+                            {(activeFields || []).map(field => (
+                                <td key={field.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                    {(rec as any)[field.id] || '-'}
+                                </td>
+                            ))}
+                        </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { position: 'top' as const },
-      title: { display: true, text: 'Horas Trabalhadas por Funcionário' },
-    },
-    scales: { y: { beginAtZero: true, title: { display: true, text: 'Horas' } } }
-  };
+  const currentFieldsForSelection = reportType === 'daily' ? dailyReportFields : summaryReportFields;
 
   return (
-    <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Informes</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 border rounded bg-gray-50">
-        <div>
-          <label htmlFor="reportType" className="block text-sm font-medium text-gray-700 mb-1">Tipo de Informe</label>
-          <select id="reportType" value={reportType} onChange={(e) => setReportType(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+    <div className="container mx-auto p-4 md:p-6 lg:p-8 bg-gray-50 min-h-screen">
+      <h1 className="text-3xl font-bold mb-6 text-gray-800 border-b pb-3">Relatórios</h1>
+
+      {/* Filters and Field Selection Area */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-4 bg-white rounded-lg shadow">
+        {/* Report Type */}
+        <div className="col-span-1 md:col-span-1">
+          <label htmlFor="reportType" className="block text-sm font-medium text-gray-700 mb-1">Tipo de Relatório</label>
+          <select id="reportType" value={reportType} onChange={e => setReportType(e.target.value)} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             <option value="daily">Diário Detalhado</option>
-            <option value="summary">Resumo por Funcionário</option>
+            <option value="summary">Resumo de Horas</option>
           </select>
         </div>
-        <div>
+
+        {/* Date Range */}
+        <div className="col-span-1 md:col-span-1">
           <label htmlFor="dateRange" className="block text-sm font-medium text-gray-700 mb-1">Período</label>
-          <select id="dateRange" value={dateRange} onChange={handleDateRangeChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
+          <select id="dateRange" value={dateRange} onChange={e => { setDateRange(e.target.value); setCustomDateRange(e.target.value === 'custom'); }} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
             <option value="current_month">Mês Atual</option>
-            <option value="week">Última Semana</option>
-            <option value="month">Último Mês</option>
+            <option value="last_month">Mês Anterior</option>
+            <option value="current_week">Semana Atual</option>
+            <option value="last_week">Semana Anterior</option>
+            <option value="today">Hoje</option>
+            <option value="yesterday">Ontem</option>
             <option value="custom">Personalizado</option>
           </select>
         </div>
+
+        {/* Custom Date Inputs */}
         {customDateRange && (
           <>
-            <div>
+            <div className="col-span-1 md:col-span-1">
               <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">Data Início</label>
-              <input type="date" id="startDate" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mt-1 block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" />
+              <input type="date" id="startDate" value={startDate} onChange={e => setStartDate(e.target.value)} className="mt-1 block w-full py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
             </div>
-            <div>
+            <div className="col-span-1 md:col-span-1">
               <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">Data Fim</label>
-              <input type="date" id="endDate" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="mt-1 block w-full pl-3 pr-2 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md" />
+              <input type="date" id="endDate" value={endDate} onChange={e => setEndDate(e.target.value)} className="mt-1 block w-full py-2 px-3 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
             </div>
           </>
         )}
+
+        {/* Employee Filter (Admin only) */}
         {isAdmin && (
-          <div>
+          <div className="col-span-1 md:col-span-1">
             <label htmlFor="employeeFilter" className="block text-sm font-medium text-gray-700 mb-1">Funcionário</label>
-            <select id="employeeFilter" value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-              <option value="all">Todos</option>
-              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.id})</option>)}
+            <select id="employeeFilter" value={employeeFilter} onChange={e => setEmployeeFilter(e.target.value)} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+              <option value="all">Todos Funcionários</option>
+              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
             </select>
           </div>
         )}
-        <div>
+
+        {/* Client Filter */}
+        <div className="col-span-1 md:col-span-1">
           <label htmlFor="clientFilter" className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-          <select id="clientFilter" value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md">
-            <option value="all">Todos</option>
+          <select id="clientFilter" value={clientFilter} onChange={e => setClientFilter(e.target.value)} className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+            <option value="all">Todos Clientes</option>
             {clients.map(client => <option key={client} value={client}>{client}</option>)}
           </select>
         </div>
-        <div className="col-span-1 md:col-span-2 lg:col-span-4 flex items-end space-x-2">
-          <button onClick={generateReport} disabled={isGenerating} className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white ${isGenerating ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500'}`}>
-            {isGenerating ? 'Gerando...' : 'Gerar Informe'}
-          </button>
-          <button onClick={debugLocalStorage} className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-            Debug LocalStorage
-          </button>
+
+        {/* Field Selection Toggle Button */}
+        <div className="col-span-1 md:col-span-full flex items-end">
+            <button 
+                onClick={() => setShowFieldSelection(!showFieldSelection)} 
+                className="mt-4 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                {showFieldSelection ? 'Ocultar Opções de Campos' : 'Selecionar Campos do Relatório'}
+            </button>
         </div>
       </div>
 
-      {reportGenerated && reportData && (
-        <div className="mt-6 p-4 border rounded bg-white shadow">
-          {/* Conteúdo do relatório para captura pelo html2canvas */}
-          <div ref={reportContentRef} className="p-4 bg-white">
-            <h2 className="text-xl font-semibold mb-4 text-center">Relatório Gerado</h2>
-            <p className="text-sm text-gray-600 mb-1 text-center">Tipo: {reportData.type === 'daily' ? 'Diário Detalhado' : 'Resumo por Funcionário'}</p>
-            <p className="text-sm text-gray-600 mb-1 text-center">Período: {reportData.startDate} a {reportData.endDate}</p>
-            {isAdmin && <p className="text-sm text-gray-600 mb-1 text-center">Funcionário: {reportData.employee === 'all' ? 'Todos' : employees.find(e => e.id === reportData.employee)?.name || reportData.employee}</p>}
-            <p className="text-sm text-gray-600 mb-4 text-center">Cliente: {reportData.client === 'all' ? 'Todos' : reportData.client}</p>
-
-            <div className="overflow-x-auto mb-6">
-              <table className="min-w-full divide-y divide-gray-200 border border-gray-300">
-                <thead className="bg-gray-100">
-                  {reportData.type === 'daily' ? (
-                    <tr>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Funcionário</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Data</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Entrada</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Saída</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Total</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Cliente</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Etiqueta</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b">Comentário</th>
-                    </tr>
-                  ) : ( // Summary
-                    <tr>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Funcionário</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Departamento</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Dias Trab.</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b border-r">Total Horas</th>
-                      <th scope="col" className="px-3 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-b">Média Diária</th>
-                    </tr>
-                  )}
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {reportData.data && reportData.data.length > 0 ? (
-                    reportData.data.map((rec: any, index: number) => (
-                      reportData.type === 'daily' ? (
-                        <tr key={`${rec.employeeName}-${rec.date}-${index}-${Math.random()}`}>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-800 border-r">{rec.employeeName}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.date}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.entryTime}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.exitTime}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{formatMinutesToHoursMinutes(rec.totalWorkTime)}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.client}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.tag}</td>
-                          <td className="px-3 py-2 text-sm text-gray-600">{rec.comment || ''}</td>
-                        </tr>
-                      ) : ( // Summary
-                        <tr key={`${rec.id}-${index}-${Math.random()}`}>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-800 border-r">{rec.name}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.department || '-'}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.workedDays}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600 border-r">{rec.totalHoursFormatted}</td>
-                          <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-600">{rec.avgHoursFormatted}</td>
-                        </tr>
-                      )
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={reportData.type === 'daily' ? 8 : 5} className="px-3 py-4 text-center text-sm text-gray-500">
-                        Nenhum registro encontrado para os filtros selecionados.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {reportData.type === 'summary' && reportData.chartData && (
-              <div className="mt-8 p-4 border rounded bg-gray-50" style={{pageBreakInside: 'avoid'}}>
-                <h3 className="text-lg font-semibold mb-4 text-center">Horas Trabalhadas por Funcionário</h3>
-                <div style={{ position: 'relative', height: '400px', width: '100%', maxWidth: '600px', margin: 'auto' }}>
-                  <Bar options={chartOptions} data={reportData.chartData} />
-                </div>
+      {/* Field Selection Checkboxes (Collapsible) */}
+      {showFieldSelection && (
+        <div className="mb-6 p-4 bg-white rounded-lg shadow">
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Selecione os campos para o relatório {reportType === 'daily' ? 'Diário' : 'Resumido'}:</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            {(currentFieldsForSelection || []).map((field: ReportFieldOption) => (
+              <div key={field.id} className="flex items-center">
+                <input
+                  id={`field-${field.id}`}
+                  name={`field-${field.id}`}
+                  type="checkbox"
+                  checked={selectedFields[field.id] || false}
+                  onChange={() => handleFieldSelectionChange(field.id)}
+                  className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                />
+                <label htmlFor={`field-${field.id}`} className="ml-2 block text-sm text-gray-900">
+                  {field.label}
+                </label>
               </div>
-            )}
-          </div>
-          {/* Fim do conteúdo para captura */}
-
-          <div className="mt-6 flex justify-end space-x-2">
-            <button onClick={() => downloadReport('pdf')} disabled={isDownloading} className={`inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm ${isDownloading ? 'text-gray-400 bg-gray-100' : 'text-gray-700 bg-white hover:bg-gray-50'}`}>
-              {isDownloading && downloadFormat === 'pdf' ? 'Baixando PDF...' : 'Baixar PDF'}
-            </button>
-            <button onClick={() => downloadReport('excel')} disabled={isDownloading} className={`inline-flex items-center px-3 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm ${isDownloading ? 'text-gray-400 bg-gray-100' : 'text-gray-700 bg-white hover:bg-gray-50'}`}>
-              {isDownloading && downloadFormat === 'excel' ? 'Baixando Excel...' : 'Baixar Excel'}
-            </button>
+            ))}
           </div>
         </div>
       )}
 
+      {/* Generate Report Button */}
+      <div className="mb-6 text-center">
+        <button onClick={generateReport} disabled={isGenerating} className="py-2 px-6 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400">
+          {isGenerating ? 'Gerando...' : 'Gerar Relatório'}
+        </button>
+      </div>
+
+      {/* Report Display Area */}
+      {reportGenerated && reportData && (
+        <div className="mt-6">
+          {renderReportContent()}
+          {/* Download Buttons */}
+          {reportData.data.length > 0 && (
+            <div className="mt-6 flex flex-col sm:flex-row justify-center items-center space-y-2 sm:space-y-0 sm:space-x-3">
+                <button onClick={() => downloadReport('pdf')} disabled={isDownloading && downloadFormat === 'pdf'} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-300">
+                    {isDownloading && downloadFormat === 'pdf' ? 'Baixando PDF...' : 'Baixar como PDF'}
+                </button>
+                <button onClick={() => downloadReport('excel')} disabled={isDownloading && downloadFormat === 'excel'} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-300">
+                    {isDownloading && downloadFormat === 'excel' ? 'Baixando Excel...' : 'Baixar como Excel'}
+                </button>
+            </div>
+          )}
+        </div>
+      )}
       {!reportGenerated && !isGenerating && (
-        <p className="text-center text-gray-500 mt-6">Selecione os filtros e clique em "Gerar Informe".</p>
+         <div className="text-center text-gray-500 mt-8 p-6 bg-white rounded-lg shadow">
+            <p>Configure os filtros e clique em "Gerar Relatório" para visualizar os dados.</p>
+        </div>
       )}
     </div>
   );
