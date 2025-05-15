@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useMemo, FormEvent, ChangeEvent } from 'react';
@@ -24,7 +23,7 @@ const AddIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5
 
 // --- Função Auxiliar para Calcular Total Diário ---
 const calculateDailyTotal = (dailyRecords: TimeRecord[] | undefined): string => {
-  if (!dailyRecords || dailyRecords.length === 0) return '';
+  if (!dailyRecords || dailyRecords.length === 0) return "";
   let totalMinutes = 0;
   dailyRecords.forEach(record => {
     if (record.totalWorkTime) {
@@ -39,7 +38,7 @@ const calculateDailyTotal = (dailyRecords: TimeRecord[] | undefined): string => 
         } catch (e) { console.error("Erro ao calcular totalWorkTime para registro:", record, e); }
     }
   });
-  if (totalMinutes === 0) return '';
+  if (totalMinutes === 0) return "";
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   let totalString = '[Total: ';
@@ -80,12 +79,12 @@ export default function FolhaPontoPage() {
 
   // Adição Inline
   const [addingInlineDate, setAddingInlineDate] = useState<string | null>(null);
-  const [addInlineFormData, setAddInlineFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'totalWorkTime' | 'status'> & { customFuncaoInput?: string }>>({});
+  const [addInlineFormData, setAddInlineFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'totalWorkTime' | 'status'>> & { customFuncaoInput?: string } >({});
 
   // Edição em Massa
   const [selectedDays, setSelectedDays] = useState<string[]>([]); 
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
-  const [bulkEditFormData, setBulkEditFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'totalWorkTime' | 'status' | 'date' | 'usedEntryTolerance' | 'usedExitTolerance'> & { customFuncaoInput?: string }>>({ clientId: '', funcaoId: '' });
+  const [bulkEditFormData, setBulkEditFormData] = useState<Partial<Omit<TimeRecord, 'id' | 'totalWorkTime' | 'status' | 'date' | 'usedEntryTolerance' | 'usedExitTolerance'>> & { customFuncaoInput?: string, startTime?: string, endTime?: string } >({ clientId: '', funcaoId: '', startTime: '', endTime: '' });
   const [bulkEditShowCustomFuncaoInput, setBulkEditShowCustomFuncaoInput] = useState(false);
 
   // Carregar todos os clientes, funções e dados do funcionário
@@ -128,7 +127,7 @@ export default function FolhaPontoPage() {
             setManualFuncaoId(defaultFuncao);
             
             setAddInlineFormData(prev => ({ ...prev, clientId: defaultClient, funcaoId: defaultFuncao }));
-            setBulkEditFormData(prev => ({ ...prev, clientId: defaultClient, funcaoId: defaultFuncao }));
+            setBulkEditFormData(prev => ({ ...prev, clientId: defaultClient, funcaoId: defaultFuncao, startTime: '', endTime: '' }));
 
           } else {
              setAvailableClientsForTimesheet(activeClients);
@@ -289,434 +288,960 @@ export default function FolhaPontoPage() {
   };
   const handleEditChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setEditFormData(prev => {
-        const updated = { ...prev, [name]: value };
-        if (name === 'funcaoId') {
-            const funcaoSelecionada = allFuncoes.find(f => f.id === value);
-            updated.customFuncaoInput = (funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra') ? prev.comment || '' : '';
-        }
-        return updated;
-    });
+    
+    if (name === 'funcaoId') {
+      const funcaoSelecionada = allFuncoes.find(f => f.id === value);
+      const isOutraFuncao = funcaoSelecionada ? funcaoSelecionada.name.toLowerCase() === 'outra' : false;
+      
+      if (!isOutraFuncao) {
+        setEditFormData(prev => ({ ...prev, [name]: value, customFuncaoInput: '' }));
+      } else {
+        setEditFormData(prev => ({ ...prev, [name]: value }));
+      }
+    } else {
+      setEditFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
-  const handleSaveEdit = (recordId: string) => {
-    if (!editFormData.startTime || !editFormData.endTime || !editFormData.clientId || !editFormData.funcaoId) { alert('Preencha todos os campos obrigatórios (Início, Fim, Cliente, Função).'); return; }
+  const handleEditSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!editFormData.startTime || !editFormData.endTime || !editFormData.clientId || !editFormData.funcaoId) {
+      alert('Preencha todos os campos obrigatórios (Início, Fim, Cliente, Função).');
+      return;
+    }
+    
     const funcaoSelecionada = allFuncoes.find(f => f.id === editFormData.funcaoId);
-    if (funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra' && !editFormData.customFuncaoInput) { alert('Por favor, especifique a função personalizada.'); return; }
-
+    const isOutraFuncao = funcaoSelecionada ? funcaoSelecionada.name.toLowerCase() === 'outra' : false;
+    
+    if (isOutraFuncao && !editFormData.customFuncaoInput) {
+      alert('Por favor, especifique a função personalizada.');
+      return;
+    }
+    
     const start = new Date(`2000-01-01T${editFormData.startTime}:00`);
     const end = new Date(`2000-01-01T${editFormData.endTime}:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) { alert('Horas de início e fim inválidas.'); return; }
-
-    const commentForRecord = funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra' ? editFormData.customFuncaoInput : editFormData.comment;
-
-    const updatedRecords = records.map(rec => 
-      rec.id === recordId ? { ...rec, ...editFormData, comment: commentForRecord, id: rec.id } : rec
-    );
-    saveRecordsToStorage(updatedRecords as TimeRecord[]);
-    setEditingRecordId(null);
-  };
-  const handleCancelEdit = () => setEditingRecordId(null);
-
-  // --- Adição Inline ---
-  const handleAddInlineClick = (date: string) => {
-    setAddingInlineDate(date);
-    setEditingRecordId(null);
-    setSelectedDays([]);
-    const defaultClient = currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : '');
-    const defaultFuncao = currentUserData?.defaultFuncaoId || (availableFuncoesForTimesheet.length > 0 ? availableFuncoesForTimesheet[0].id : '');
-    setAddInlineFormData({ 
-        date: date, 
-        startTime: '', 
-        endTime: '', 
-        clientId: defaultClient,
-        funcaoId: defaultFuncao,
-        comment: '',
-        customFuncaoInput: '',
-        usedEntryTolerance: false,
-        usedExitTolerance: false
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+      alert('Horas de início e fim inválidas.');
+      return;
+    }
+    
+    const updatedRecords = records.map(record => {
+      if (record.id === editingRecordId) {
+        const { customFuncaoInput, ...restOfEditData } = editFormData;
+        return {
+          ...record,
+          ...restOfEditData,
+          comment: isOutraFuncao ? customFuncaoInput : editFormData.comment || ''
+        };
+      }
+      return record;
     });
+    
+    saveRecordsToStorage(updatedRecords);
+    setEditingRecordId(null);
+    setEditFormData({});
   };
-  const handleAddInlineChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
-    setAddInlineFormData(prev => {
-        const updated = { ...prev, [name]: value };
-        if (name === 'funcaoId') {
-            const funcaoSelecionada = allFuncoes.find(f => f.id === value);
-            updated.customFuncaoInput = (funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra') ? '' : undefined;
-        }
-        return updated;
-    });
+  const handleEditCancel = () => {
+    setEditingRecordId(null);
+    setEditFormData({});
   };
-  const handleSaveAddInline = () => {
-    if (!addInlineFormData.startTime || !addInlineFormData.endTime || !addInlineFormData.clientId || !addInlineFormData.funcaoId) { alert('Preencha todos os campos obrigatórios (Início, Fim, Cliente, Função).'); return; }
-    const funcaoSelecionada = allFuncoes.find(f => f.id === addInlineFormData.funcaoId);
-    if (funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra' && !addInlineFormData.customFuncaoInput) { alert('Por favor, especifique a função personalizada.'); return; }
-
-    const start = new Date(`2000-01-01T${addInlineFormData.startTime}:00`);
-    const end = new Date(`2000-01-01T${addInlineFormData.endTime}:00`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) { alert('Horas de início e fim inválidas.'); return; }
-
-    const commentForRecord = funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra' ? addInlineFormData.customFuncaoInput : addInlineFormData.comment;
-
-    const newRecord: Partial<TimeRecord> = {
-      id: `rec-inline-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      userId: user!.id,
-      date: addInlineFormData.date!,
-      startTime: addInlineFormData.startTime!,
-      endTime: addInlineFormData.endTime!,
-      status: 'Manual',
-      clientId: addInlineFormData.clientId!,
-      funcaoId: addInlineFormData.funcaoId!,
-      comment: commentForRecord,
-      usedEntryTolerance: false,
-      usedExitTolerance: false
-    };
-    saveRecordsToStorage([...records, newRecord as TimeRecord]);
-    setAddingInlineDate(null);
-  };
-  const handleCancelAddInline = () => setAddingInlineDate(null);
-
-  // --- Exclusão ---
-  const handleDeleteRecord = (recordId: string) => {
-    if (confirm("Tem certeza que deseja excluir este registro?")) {
-      const updatedRecords = records.filter(rec => rec.id !== recordId);
+  const handleDeleteClick = (recordId: string) => {
+    if (window.confirm('Tem certeza que deseja excluir este registro?')) {
+      const updatedRecords = records.filter(record => record.id !== recordId);
       saveRecordsToStorage(updatedRecords);
     }
   };
 
-  // --- Edição em Massa ---
-  const handleDaySelection = (dateString: string) => {
-    setSelectedDays(prev => 
-      prev.includes(dateString) ? prev.filter(d => d !== dateString) : [...prev, dateString]
-    );
+  // --- Adição Inline ---
+  const handleAddInlineClick = (dateString: string) => {
+    setAddingInlineDate(dateString);
+    setAddInlineFormData({
+      date: dateString,
+      startTime: '',
+      endTime: '',
+      clientId: currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : ''),
+      funcaoId: currentUserData?.defaultFuncaoId || (availableFuncoesForTimesheet.length > 0 ? availableFuncoesForTimesheet[0].id : ''),
+      customFuncaoInput: '',
+      comment: ''
+    });
+    setEditingRecordId(null);
+    setSelectedDays([]);
   };
-  const handleBulkEditFuncaoChange = (e: ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    setBulkEditFormData(prev => ({...prev, funcaoId: value}));
-    const funcaoSelecionada = allFuncoes.find(f => f.id === value);
-    setBulkEditShowCustomFuncaoInput(funcaoSelecionada ? funcaoSelecionada.name.toLowerCase() === 'outra' : false);
-    if (!funcaoSelecionada || funcaoSelecionada.name.toLowerCase() !== 'outra') {
-        setBulkEditFormData(prev => ({...prev, customFuncaoInput: ''}));
+  const handleAddInlineChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    
+    if (name === 'funcaoId') {
+      const funcaoSelecionada = allFuncoes.find(f => f.id === value);
+      const isOutraFuncao = funcaoSelecionada ? funcaoSelecionada.name.toLowerCase() === 'outra' : false;
+      
+      if (!isOutraFuncao) {
+        setAddInlineFormData(prev => ({ ...prev, [name]: value, customFuncaoInput: '' }));
+      } else {
+        setAddInlineFormData(prev => ({ ...prev, [name]: value }));
+      }
+    } else {
+      setAddInlineFormData(prev => ({ ...prev, [name]: value }));
+    }
+  };
+  const handleAddInlineSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!addInlineFormData.startTime || !addInlineFormData.endTime || !addInlineFormData.clientId || !addInlineFormData.funcaoId) {
+      alert('Preencha todos os campos obrigatórios (Início, Fim, Cliente, Função).');
+      return;
+    }
+    
+    const funcaoSelecionada = allFuncoes.find(f => f.id === addInlineFormData.funcaoId);
+    const isOutraFuncao = funcaoSelecionada ? funcaoSelecionada.name.toLowerCase() === 'outra' : false;
+    
+    if (isOutraFuncao && !addInlineFormData.customFuncaoInput) {
+      alert('Por favor, especifique a função personalizada.');
+      return;
+    }
+    
+    const start = new Date(`2000-01-01T${addInlineFormData.startTime}:00`);
+    const end = new Date(`2000-01-01T${addInlineFormData.endTime}:00`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+      alert('Horas de início e fim inválidas.');
+      return;
+    }
+    
+    const { customFuncaoInput, ...restOfFormData } = addInlineFormData;
+    
+    const newRecord: Partial<TimeRecord> = {
+      id: `rec-inline-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      userId: user!.id,
+      status: 'Manual',
+      ...restOfFormData,
+      comment: isOutraFuncao ? customFuncaoInput : addInlineFormData.comment || '',
+      usedEntryTolerance: false,
+      usedExitTolerance: false
+    };
+    
+    saveRecordsToStorage([...records, newRecord as TimeRecord]);
+    setAddingInlineDate(null);
+    setAddInlineFormData({});
+  };
+  const handleAddInlineCancel = () => {
+    setAddingInlineDate(null);
+    setAddInlineFormData({});
+  };
+
+  // --- Edição em Massa ---
+  const handleDaySelectionChange = (dateString: string) => {
+    setSelectedDays(prev => {
+      if (prev.includes(dateString)) {
+        return prev.filter(d => d !== dateString);
+      } else {
+        return [...prev, dateString];
+      }
+    });
+    setEditingRecordId(null);
+    setAddingInlineDate(null);
+  };
+  const handleBulkEditClick = () => {
+    if (selectedDays.length === 0) {
+      alert('Selecione pelo menos um dia para edição em massa.');
+      return;
+    }
+    setBulkEditFormData({
+      startTime: '',
+      endTime: '',
+      clientId: currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : ''),
+      funcaoId: currentUserData?.defaultFuncaoId || (availableFuncoesForTimesheet.length > 0 ? availableFuncoesForTimesheet[0].id : ''),
+      customFuncaoInput: '',
+      comment: ''
+    });
+    setBulkEditShowCustomFuncaoInput(false);
+    setShowBulkEditModal(true);
+  };
+  const handleBulkEditChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    
+    if (name === 'funcaoId') {
+      const funcaoSelecionada = allFuncoes.find(f => f.id === value);
+      const isOutraFuncao = funcaoSelecionada ? funcaoSelecionada.name.toLowerCase() === 'outra' : false;
+      
+      setBulkEditShowCustomFuncaoInput(isOutraFuncao);
+      
+      if (!isOutraFuncao) {
+        setBulkEditFormData(prev => ({ ...prev, [name]: value, customFuncaoInput: '' }));
+      } else {
+        setBulkEditFormData(prev => ({ ...prev, [name]: value }));
+      }
+    } else {
+      setBulkEditFormData(prev => ({ ...prev, [name]: value }));
     }
   };
   const handleBulkEditSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (selectedDays.length === 0) { alert("Nenhum dia selecionado para edição em massa."); return; }
-    if (!bulkEditFormData.clientId || !bulkEditFormData.funcaoId) { alert("Cliente e Função são obrigatórios para edição em massa."); return; }
-    const funcaoSelecionada = allFuncoes.find(f => f.id === bulkEditFormData.funcaoId);
-    if (funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra' && !bulkEditFormData.customFuncaoInput) { alert('Por favor, especifique a função personalizada para edição em massa.'); return; }
-
-    const commentForBulkRecord = funcaoSelecionada && funcaoSelecionada.name.toLowerCase() === 'outra' ? bulkEditFormData.customFuncaoInput : bulkEditFormData.comment;
-
-    const updatedRecords = records.map(rec => {
-      if (selectedDays.includes(rec.date)) {
-        return {
-          ...rec,
-          clientId: bulkEditFormData.clientId,
-          funcaoId: bulkEditFormData.funcaoId,
-          comment: commentForBulkRecord || rec.comment // Mantém comentário original se não for 'Outra' ou se não houver novo comentário
-        };
+    
+    // Validar campos de hora (ambos devem estar preenchidos ou ambos vazios)
+    if ((!bulkEditFormData.startTime && bulkEditFormData.endTime) || (bulkEditFormData.startTime && !bulkEditFormData.endTime)) {
+      alert('Nova Hora Início e Nova Hora Fim são obrigatórias para edição em massa.');
+      return;
+    }
+    
+    // Validar horas se ambas estiverem preenchidas
+    if (bulkEditFormData.startTime && bulkEditFormData.endTime) {
+      const start = new Date(`2000-01-01T${bulkEditFormData.startTime}:00`);
+      const end = new Date(`2000-01-01T${bulkEditFormData.endTime}:00`);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+        alert('Horas de início e fim inválidas.');
+        return;
       }
-      return rec;
+    }
+    
+    // Validar função personalizada se "Outra" estiver selecionada
+    const funcaoSelecionada = allFuncoes.find(f => f.id === bulkEditFormData.funcaoId);
+    const isOutraFuncao = funcaoSelecionada ? funcaoSelecionada.name.toLowerCase() === 'outra' : false;
+    
+    if (isOutraFuncao && bulkEditFormData.funcaoId && !bulkEditFormData.customFuncaoInput) {
+      alert('Por favor, especifique a função personalizada.');
+      return;
+    }
+    
+    // Aplicar edições em massa
+    let updatedRecords = [...records];
+    
+    selectedDays.forEach(dateString => {
+      const dayRecords = updatedRecords.filter(record => record.date === dateString);
+      
+      if (dayRecords.length > 0) {
+        updatedRecords = updatedRecords.map(record => {
+          if (record.date === dateString) {
+            const updates: Partial<TimeRecord> = {};
+            
+            // Atualizar apenas os campos que foram preenchidos
+            if (bulkEditFormData.startTime && bulkEditFormData.endTime) {
+              updates.startTime = bulkEditFormData.startTime;
+              updates.endTime = bulkEditFormData.endTime;
+            }
+            
+            if (bulkEditFormData.clientId) {
+              updates.clientId = bulkEditFormData.clientId;
+            }
+            
+            if (bulkEditFormData.funcaoId) {
+              updates.funcaoId = bulkEditFormData.funcaoId;
+              
+              if (isOutraFuncao) {
+                updates.comment = bulkEditFormData.customFuncaoInput || '';
+              } else if (bulkEditFormData.comment !== undefined) {
+                updates.comment = bulkEditFormData.comment;
+              }
+            } else if (bulkEditFormData.comment !== undefined) {
+              updates.comment = bulkEditFormData.comment;
+            }
+            
+            return { ...record, ...updates };
+          }
+          return record;
+        });
+      } else {
+        // Se não houver registros para o dia, criar um novo
+        if (bulkEditFormData.startTime && bulkEditFormData.endTime && bulkEditFormData.clientId && bulkEditFormData.funcaoId) {
+          const newRecord: Partial<TimeRecord> = {
+            id: `rec-bulk-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${dateString}`,
+            userId: user!.id,
+            date: dateString,
+            startTime: bulkEditFormData.startTime,
+            endTime: bulkEditFormData.endTime,
+            status: 'Manual',
+            clientId: bulkEditFormData.clientId,
+            funcaoId: bulkEditFormData.funcaoId,
+            comment: isOutraFuncao ? bulkEditFormData.customFuncaoInput : bulkEditFormData.comment || '',
+            usedEntryTolerance: false,
+            usedExitTolerance: false
+          };
+          
+          updatedRecords.push(newRecord as TimeRecord);
+        }
+      }
     });
-    saveRecordsToStorage(updatedRecords as TimeRecord[]);
+    
+    saveRecordsToStorage(updatedRecords);
     setShowBulkEditModal(false);
     setSelectedDays([]);
-    // Resetar formulário de edição em massa para defaults do usuário
-    const defaultClient = currentUserData?.defaultClientId || (availableClientsForTimesheet.length > 0 ? availableClientsForTimesheet[0].id : '');
-    const defaultFuncao = currentUserData?.defaultFuncaoId || (availableFuncoesForTimesheet.length > 0 ? availableFuncoesForTimesheet[0].id : '');
-    setBulkEditFormData({ clientId: defaultClient, funcaoId: defaultFuncao, comment: '', customFuncaoInput: ''});
-    setBulkEditShowCustomFuncaoInput(allFuncoes.find(f => f.id === defaultFuncao)?.name.toLowerCase() === 'outra');
+    setBulkEditFormData({});
   };
 
   // --- Renderização ---
-  if (authLoading || isLoading) return <div className="container mx-auto px-4 py-8 text-center">Carregando...</div>;
-  if (!isAuthenticated || !user) return <div className="container mx-auto px-4 py-8 text-center">Acesso negado. Faça login.</div>;
+  if (authLoading || isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
+          <h1 className="text-2xl font-bold text-center mb-6">Acesso Restrito</h1>
+          <p className="text-gray-600 mb-4 text-center">Você precisa estar logado para acessar a folha de ponto.</p>
+          <div className="flex justify-center">
+            <a href="/auth/login" className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded transition duration-300">
+              Fazer Login
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
-        <h1 className="text-3xl font-bold text-gray-800">Folha de Ponto</h1>
-        <div className="flex items-center gap-2">
-          <select value={selectedMonth} onChange={e => setSelectedMonth(Number(e.target.value))} className="p-2 border rounded-md shadow-sm">
-            {Array.from({ length: 12 }, (_, i) => (
-              <option key={i} value={i}>{new Date(0, i).toLocaleString('pt-BR', { month: 'long' })}</option>
-            ))}
-          </select>
-          <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))} className="p-2 border rounded-md shadow-sm">
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => (
-              <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
-        </div>
-        <button 
-            onClick={() => {
-                resetManualForm(); 
-                setShowAddModal(true);
-                setAddingInlineDate(null);
-                setEditingRecordId(null);
-                setSelectedDays([]);
-            }}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm flex items-center">
-            <AddIcon /> Adicionar Registro Manual
-        </button>
-      </div>
-
-      {selectedDays.length > 0 && (
-        <div className="mb-4 flex justify-end">
-            <button 
-                onClick={() => {
-                    setShowBulkEditModal(true);
-                    setAddingInlineDate(null);
-                    setEditingRecordId(null);
-                }}
-                className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md shadow-sm">
-                Editar {selectedDays.length} Dia(s) Selecionado(s)
+      <h1 className="text-2xl font-bold mb-6">Folha de Ponto</h1>
+      
+      {/* Filtros e Controles */}
+      <div className="bg-white p-4 rounded-lg shadow-md mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div>
+              <label htmlFor="month-select" className="block text-sm font-medium text-gray-700 mb-1">Mês</label>
+              <select
+                id="month-select"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Array.from({ length: 12 }, (_, i) => (
+                  <option key={i} value={i}>
+                    {new Date(2000, i, 1).toLocaleDateString('pt-BR', { month: 'long' })}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="year-select" className="block text-sm font-medium text-gray-700 mb-1">Ano</label>
+              <select
+                id="year-select"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {Array.from({ length: 5 }, (_, i) => {
+                  const year = new Date().getFullYear() - 2 + i;
+                  return <option key={year} value={year}>{year}</option>;
+                })}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md flex items-center transition duration-300"
+            >
+              <AddIcon /> Adicionar Registro Manual
             </button>
-        </div>
-      )}
-
-      {/* Modal de Adição Manual */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center p-4">
-          <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-lg">
-            <h2 className="text-2xl font-bold mb-6">Adicionar Registro Manual</h2>
-            <form onSubmit={handleManualSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="manualDate" className="block text-sm font-medium text-gray-700">Data</label>
-                <input type="date" id="manualDate" value={manualDate} onChange={e => setManualDate(e.target.value)} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="manualStartTime" className="block text-sm font-medium text-gray-700">Hora Início</label>
-                  <input type="time" id="manualStartTime" value={manualStartTime} onChange={e => setManualStartTime(e.target.value)} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
-                </div>
-                <div>
-                  <label htmlFor="manualEndTime" className="block text-sm font-medium text-gray-700">Hora Fim</label>
-                  <input type="time" id="manualEndTime" value={manualEndTime} onChange={e => setManualEndTime(e.target.value)} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="manualClientId" className="block text-sm font-medium text-gray-700">Cliente</label>
-                <select id="manualClientId" value={manualClientId} onChange={e => setManualClientId(e.target.value)} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md bg-white">
-                  <option value="">Selecione um Cliente</option>
-                  {availableClientsForTimesheet.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="manualFuncaoId" className="block text-sm font-medium text-gray-700">Função</label>
-                <select id="manualFuncaoId" value={manualFuncaoId} onChange={handleManualFuncaoChange} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md bg-white">
-                  <option value="">Selecione uma Função</option>
-                  {availableFuncoesForTimesheet.map(funcao => <option key={funcao.id} value={funcao.id}>{funcao.name}</option>)}
-                </select>
-              </div>
-              {showManualCustomFuncaoInput && (
-                <div>
-                  <label htmlFor="manualCustomFuncaoInput" className="block text-sm font-medium text-gray-700">Especifique a Função "Outra"</label>
-                  <input type="text" id="manualCustomFuncaoInput" value={manualCustomFuncaoInput} onChange={e => setManualCustomFuncaoInput(e.target.value)} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
-                </div>
-              )}
-              <div>
-                <label htmlFor="manualComment" className="block text-sm font-medium text-gray-700">Comentário Adicional</label>
-                <textarea id="manualComment" value={manualComment} onChange={e => setManualComment(e.target.value)} rows={2} className="mt-1 block w-full p-2 border border-gray-300 rounded-md"></textarea>
-              </div>
-              <div className="flex justify-end space-x-3 pt-4">
-                <button type="button" onClick={resetManualForm} className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Cancelar</button>
-                <button type="submit" className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">Salvar Registro</button>
-              </div>
-            </form>
+            {selectedDays.length > 0 && (
+              <button
+                onClick={handleBulkEditClick}
+                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md transition duration-300"
+              >
+                Editar {selectedDays.length} Dia(s) Selecionado(s)
+              </button>
+            )}
           </div>
         </div>
-      )}
-
-      {/* Modal de Edição em Massa */}
-      {showBulkEditModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex justify-center items-center p-4">
-          <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-lg">
-            <h2 className="text-2xl font-bold mb-6">Editar Registros de {selectedDays.length} Dia(s)</h2>
-            <p className="text-sm text-gray-600 mb-1">Dias selecionados:</p>
-            <ul className="list-disc list-inside mb-4 text-sm text-gray-500 max-h-20 overflow-y-auto">
-                {selectedDays.map(day => <li key={day}>{day}</li>)}
-            </ul>
-            <form onSubmit={handleBulkEditSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="bulkEditClientId" className="block text-sm font-medium text-gray-700">Novo Cliente</label>
-                <select id="bulkEditClientId" value={bulkEditFormData.clientId} onChange={e => setBulkEditFormData(prev => ({...prev, clientId: e.target.value}))} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md bg-white">
-                  <option value="">Selecione um Cliente</option>
-                  {availableClientsForTimesheet.map(client => <option key={client.id} value={client.id}>{client.name}</option>)}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="bulkEditFuncaoId" className="block text-sm font-medium text-gray-700">Nova Função</label>
-                <select id="bulkEditFuncaoId" value={bulkEditFormData.funcaoId} onChange={handleBulkEditFuncaoChange} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md bg-white">
-                  <option value="">Selecione uma Função</option>
-                  {availableFuncoesForTimesheet.map(funcao => <option key={funcao.id} value={funcao.id}>{funcao.name}</option>)}
-                </select>
-              </div>
-              {bulkEditShowCustomFuncaoInput && (
-                <div>
-                  <label htmlFor="bulkEditCustomFuncaoInput" className="block text-sm font-medium text-gray-700">Especifique a Função "Outra"</label>
-                  <input type="text" id="bulkEditCustomFuncaoInput" value={bulkEditFormData.customFuncaoInput || ''} onChange={e => setBulkEditFormData(prev => ({...prev, customFuncaoInput: e.target.value}))} required className="mt-1 block w-full p-2 border border-gray-300 rounded-md" />
-                </div>
-              )}
-              <div>
-                <label htmlFor="bulkEditComment" className="block text-sm font-medium text-gray-700">Novo Comentário (Opcional)</label>
-                <textarea id="bulkEditComment" value={bulkEditFormData.comment || ''} onChange={e => setBulkEditFormData(prev => ({...prev, comment: e.target.value}))} rows={2} className="mt-1 block w-full p-2 border border-gray-300 rounded-md"></textarea>
-                <p className="text-xs text-gray-500 mt-1">Se a função for "Outra", o texto acima será usado. Caso contrário, este comentário substituirá os existentes nos dias selecionados (se preenchido).</p>
-              </div>
-              <div className="flex justify-end space-x-3 pt-4">
-                <button type="button" onClick={() => {setShowBulkEditModal(false); setSelectedDays([]);}} className="px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Cancelar</button>
-                <button type="submit" className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">Aplicar Alterações</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
+      </div>
+      
       {/* Tabela de Registros */}
-      <div className="bg-white shadow-xl rounded-lg overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="px-2 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-10">
-                <input 
-                    type="checkbox" 
-                    className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                    onChange={(e) => {
-                        if (e.target.checked) {
-                            setSelectedDays(daysInMonth.map(d => d.dateString));
-                        } else {
-                            setSelectedDays([]);
-                        }
-                    }}
-                    checked={selectedDays.length === daysInMonth.length && daysInMonth.length > 0}
-                    title="Selecionar/Deselecionar todos os dias do mês"
-                />
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Data <span className="text-gray-400 font-normal normal-case">(Dia da Semana)</span></th>
-              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Registros <span className="text-gray-400 font-normal normal-case">(Início - Fim, Cliente, Função, Comentário)</span></th>
-              <th className="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {daysInMonth.map(({ date, dateString }) => {
-              const dailyRecords = groupedRecords[dateString];
-              const dayOfWeek = date.toLocaleDateString('pt-BR', { weekday: 'short' });
-              const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-              const isSelectedForBulk = selectedDays.includes(dateString);
-
-              return (
-                <React.Fragment key={dateString}>
-                  <tr className={`${isWeekend ? 'bg-gray-50' : ''} ${isSelectedForBulk ? 'bg-indigo-50' : ''}`}>
-                    <td className="px-2 py-4 whitespace-nowrap">
-                        <input 
-                            type="checkbox" 
-                            className="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                            checked={isSelectedForBulk}
-                            onChange={() => handleDaySelection(dateString)}
+      <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                  <span className="sr-only">Selecionar</span>
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Data
+                </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Registros
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {daysInMonth.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="px-6 py-4 text-center text-gray-500">
+                    Nenhum dia encontrado para o mês e ano selecionados.
+                  </td>
+                </tr>
+              ) : (
+                daysInMonth.map(({ dateString }) => {
+                  const dayRecords = groupedRecords[dateString] || [];
+                  const isSelected = selectedDays.includes(dateString);
+                  const isEditing = addingInlineDate === dateString;
+                  
+                  return (
+                    <tr key={dateString} className={isSelected ? "bg-blue-50" : ""}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleDaySelectionChange(dateString)}
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                         />
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{dateString}</div>
-                      <div className={`text-xs ${isWeekend ? 'text-red-500' : 'text-gray-500'}`}>{dayOfWeek} {calculateDailyTotal(dailyRecords)}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {dailyRecords && dailyRecords.length > 0 ? (
-                        dailyRecords.map(record => (
-                          editingRecordId === record.id ? (
-                            // Formulário de Edição Inline
-                            <div key={record.id} className="p-3 my-2 border border-indigo-300 rounded-md bg-indigo-50 space-y-2">
-                              <div className="grid grid-cols-2 gap-2">
-                                <input type="time" name="startTime" value={editFormData.startTime || ''} onChange={handleEditChange} className="p-1 border rounded-md text-sm w-full" />
-                                <input type="time" name="endTime" value={editFormData.endTime || ''} onChange={handleEditChange} className="p-1 border rounded-md text-sm w-full" />
-                              </div>
-                              <select name="clientId" value={editFormData.clientId || ''} onChange={handleEditChange} className="p-1 border rounded-md text-sm w-full bg-white">
-                                <option value="">Cliente...</option>
-                                {availableClientsForTimesheet.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                              </select>
-                              <select name="funcaoId" value={editFormData.funcaoId || ''} onChange={handleEditChange} className="p-1 border rounded-md text-sm w-full bg-white">
-                                <option value="">Função...</option>
-                                {availableFuncoesForTimesheet.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                              </select>
-                              {(allFuncoes.find(f => f.id === editFormData.funcaoId)?.name.toLowerCase() === 'outra') && (
-                                <input type="text" name="customFuncaoInput" placeholder="Especifique Outra Função" value={editFormData.customFuncaoInput || ''} onChange={handleEditChange} className="p-1 border rounded-md text-sm w-full" />
-                              )}
-                              <textarea name="comment" value={editFormData.comment || ''} onChange={handleEditChange} placeholder="Comentário..." rows={1} className="p-1 border rounded-md text-sm w-full"></textarea>
-                              <div className="flex justify-end space-x-2 mt-1">
-                                <button onClick={() => handleSaveEdit(record.id)} className="p-1 text-green-600 hover:text-green-800"><SaveIcon /></button>
-                                <button onClick={handleCancelEdit} className="p-1 text-red-600 hover:text-red-800"><CancelIcon /></button>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {new Date(dateString.split('/').reverse().join('-')).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="space-y-4">
+                          {/* Registros do dia */}
+                          {dayRecords.length > 0 ? (
+                            <div className="space-y-3">
+                              {dayRecords.map(record => (
+                                <div key={record.id} className="bg-gray-50 p-3 rounded-md">
+                                  {editingRecordId === record.id ? (
+                                    // Formulário de edição inline
+                                    <form onSubmit={handleEditSubmit} className="space-y-3">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 mb-1">Hora Início</label>
+                                          <input
+                                            type="time"
+                                            name="startTime"
+                                            value={editFormData.startTime || ''}
+                                            onChange={handleEditChange}
+                                            className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            required
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 mb-1">Hora Fim</label>
+                                          <input
+                                            type="time"
+                                            name="endTime"
+                                            value={editFormData.endTime || ''}
+                                            onChange={handleEditChange}
+                                            className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            required
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 mb-1">Cliente</label>
+                                          <select
+                                            name="clientId"
+                                            value={editFormData.clientId || ''}
+                                            onChange={handleEditChange}
+                                            className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            required
+                                          >
+                                            <option value="">Selecione um cliente</option>
+                                            {availableClientsForTimesheet.map(client => (
+                                              <option key={client.id} value={client.id}>{client.name}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 mb-1">Função</label>
+                                          <select
+                                            name="funcaoId"
+                                            value={editFormData.funcaoId || ''}
+                                            onChange={handleEditChange}
+                                            className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            required
+                                          >
+                                            <option value="">Selecione uma função</option>
+                                            {availableFuncoesForTimesheet.map(funcao => (
+                                              <option key={funcao.id} value={funcao.id}>{funcao.name}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+                                      
+                                      {/* Campo para função personalizada */}
+                                      {editFormData.funcaoId && allFuncoes.find(f => f.id === editFormData.funcaoId)?.name.toLowerCase() === 'outra' && (
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 mb-1">Especifique a Função</label>
+                                          <input
+                                            type="text"
+                                            name="customFuncaoInput"
+                                            value={editFormData.customFuncaoInput || ''}
+                                            onChange={handleEditChange}
+                                            className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            placeholder="Ex: Desenvolvimento Frontend"
+                                            required
+                                          />
+                                        </div>
+                                      )}
+                                      
+                                      {/* Campo de comentário (apenas se não for "Outra" função) */}
+                                      {(!editFormData.funcaoId || allFuncoes.find(f => f.id === editFormData.funcaoId)?.name.toLowerCase() !== 'outra') && (
+                                        <div>
+                                          <label className="block text-xs font-medium text-gray-700 mb-1">Comentário (opcional)</label>
+                                          <textarea
+                                            name="comment"
+                                            value={editFormData.comment || ''}
+                                            onChange={handleEditChange}
+                                            className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            rows={2}
+                                          />
+                                        </div>
+                                      )}
+                                      
+                                      <div className="flex justify-end space-x-2">
+                                        <button
+                                          type="button"
+                                          onClick={handleEditCancel}
+                                          className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-3 py-1 rounded-md flex items-center text-sm transition duration-300"
+                                        >
+                                          <CancelIcon /> Cancelar
+                                        </button>
+                                        <button
+                                          type="submit"
+                                          className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-md flex items-center text-sm transition duration-300"
+                                        >
+                                          <SaveIcon /> Salvar
+                                        </button>
+                                      </div>
+                                    </form>
+                                  ) : (
+                                    // Visualização do registro
+                                    <div>
+                                      <div className="flex justify-between items-start">
+                                        <div>
+                                          <div className="flex items-center space-x-2">
+                                            <span className="text-sm font-medium text-gray-900">
+                                              {record.startTime} - {record.endTime}
+                                            </span>
+                                            <span className="px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800">
+                                              {record.status}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 text-sm text-gray-600">
+                                            <span className="font-medium">Cliente:</span> {allClients.find(c => c.id === record.clientId)?.name || 'Desconhecido'}
+                                          </div>
+                                          <div className="mt-1 text-sm text-gray-600">
+                                            <span className="font-medium">Função:</span> {allFuncoes.find(f => f.id === record.funcaoId)?.name || 'Desconhecida'}
+                                            {record.comment && (
+                                              <span className="ml-2 text-gray-500 italic">
+                                                {allFuncoes.find(f => f.id === record.funcaoId)?.name.toLowerCase() === 'outra' 
+                                                  ? `(${record.comment})` 
+                                                  : `- ${record.comment}`}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <div className="flex space-x-1">
+                                          <button
+                                            onClick={() => handleEditClick(record)}
+                                            className="text-blue-600 hover:text-blue-800 p-1 rounded-full hover:bg-blue-100 transition duration-300"
+                                            title="Editar"
+                                          >
+                                            <EditIcon />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteClick(record.id)}
+                                            className="text-red-600 hover:text-red-800 p-1 rounded-full hover:bg-red-100 transition duration-300"
+                                            title="Excluir"
+                                          >
+                                            <DeleteIcon />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                              <div className="text-right text-sm font-medium text-gray-700">
+                                {calculateDailyTotal(dayRecords)}
                               </div>
                             </div>
                           ) : (
-                            // Visualização do Registro
-                            <div key={record.id} className="text-sm text-gray-700 py-1 flex justify-between items-center group">
-                              <div>
-                                <span className="font-medium">{record.startTime} - {record.endTime}</span>
-                                <span className="text-gray-500"> ({Math.floor((record.totalWorkTime || 0) / 60)}h { (record.totalWorkTime || 0) % 60}m)</span><br/>
-                                <span className="text-xs text-indigo-700">{allClients.find(c => c.id === record.clientId)?.name || record.clientId}</span>
-                                <span className="text-xs text-purple-700 ml-2">{allFuncoes.find(f => f.id === record.funcaoId)?.name || record.funcaoId}</span>
-                                {record.comment && <span className="text-xs text-gray-500 block italic">L: {record.comment}</span>}
+                            <div className="text-sm text-gray-500 italic">Nenhum registro para este dia.</div>
+                          )}
+                          
+                          {/* Formulário de adição inline */}
+                          {isEditing ? (
+                            <form onSubmit={handleAddInlineSubmit} className="mt-3 bg-blue-50 p-3 rounded-md space-y-3">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Hora Início</label>
+                                  <input
+                                    type="time"
+                                    name="startTime"
+                                    value={addInlineFormData.startTime || ''}
+                                    onChange={handleAddInlineChange}
+                                    className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Hora Fim</label>
+                                  <input
+                                    type="time"
+                                    name="endTime"
+                                    value={addInlineFormData.endTime || ''}
+                                    onChange={handleAddInlineChange}
+                                    className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    required
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Cliente</label>
+                                  <select
+                                    name="clientId"
+                                    value={addInlineFormData.clientId || ''}
+                                    onChange={handleAddInlineChange}
+                                    className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    required
+                                  >
+                                    <option value="">Selecione um cliente</option>
+                                    {availableClientsForTimesheet.map(client => (
+                                      <option key={client.id} value={client.id}>{client.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Função</label>
+                                  <select
+                                    name="funcaoId"
+                                    value={addInlineFormData.funcaoId || ''}
+                                    onChange={handleAddInlineChange}
+                                    className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    required
+                                  >
+                                    <option value="">Selecione uma função</option>
+                                    {availableFuncoesForTimesheet.map(funcao => (
+                                      <option key={funcao.id} value={funcao.id}>{funcao.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
                               </div>
-                              <div className="opacity-0 group-hover:opacity-100 transition-opacity space-x-1">
-                                <button onClick={() => handleEditClick(record)} className="p-1 text-blue-600 hover:text-blue-800"><EditIcon /></button>
-                                <button onClick={() => handleDeleteRecord(record.id)} className="p-1 text-red-600 hover:text-red-800"><DeleteIcon /></button>
+                              
+                              {/* Campo para função personalizada */}
+                              {addInlineFormData.funcaoId && allFuncoes.find(f => f.id === addInlineFormData.funcaoId)?.name.toLowerCase() === 'outra' && (
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Especifique a Função</label>
+                                  <input
+                                    type="text"
+                                    name="customFuncaoInput"
+                                    value={addInlineFormData.customFuncaoInput || ''}
+                                    onChange={handleAddInlineChange}
+                                    className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Ex: Desenvolvimento Frontend"
+                                    required
+                                  />
+                                </div>
+                              )}
+                              
+                              {/* Campo de comentário (apenas se não for "Outra" função) */}
+                              {(!addInlineFormData.funcaoId || allFuncoes.find(f => f.id === addInlineFormData.funcaoId)?.name.toLowerCase() !== 'outra') && (
+                                <div>
+                                  <label className="block text-xs font-medium text-gray-700 mb-1">Comentário (opcional)</label>
+                                  <textarea
+                                    name="comment"
+                                    value={addInlineFormData.comment || ''}
+                                    onChange={handleAddInlineChange}
+                                    className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    rows={2}
+                                  />
+                                </div>
+                              )}
+                              
+                              <div className="flex justify-end space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={handleAddInlineCancel}
+                                  className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-3 py-1 rounded-md flex items-center text-sm transition duration-300"
+                                >
+                                  <CancelIcon /> Cancelar
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded-md flex items-center text-sm transition duration-300"
+                                >
+                                  <SaveIcon /> Adicionar
+                                </button>
                               </div>
-                            </div>
-                          )
-                        ))
-                      ) : (
-                        <div className="text-sm text-gray-400 italic">Nenhum registro neste dia.</div>
-                      )}
-                      {/* Formulário de Adição Inline */}
-                      {addingInlineDate === dateString && (
-                         <div className="p-3 my-2 border border-green-300 rounded-md bg-green-50 space-y-2">
-                            <div className="grid grid-cols-2 gap-2">
-                                <input type="time" name="startTime" value={addInlineFormData.startTime || ''} onChange={handleAddInlineChange} className="p-1 border rounded-md text-sm w-full" placeholder="Início"/>
-                                <input type="time" name="endTime" value={addInlineFormData.endTime || ''} onChange={handleAddInlineChange} className="p-1 border rounded-md text-sm w-full" placeholder="Fim"/>
-                            </div>
-                            <select name="clientId" value={addInlineFormData.clientId || ''} onChange={handleAddInlineChange} className="p-1 border rounded-md text-sm w-full bg-white">
-                                <option value="">Cliente...</option>
-                                {availableClientsForTimesheet.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <select name="funcaoId" value={addInlineFormData.funcaoId || ''} onChange={handleAddInlineChange} className="p-1 border rounded-md text-sm w-full bg-white">
-                                <option value="">Função...</option>
-                                {availableFuncoesForTimesheet.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                            </select>
-                            {(allFuncoes.find(f => f.id === addInlineFormData.funcaoId)?.name.toLowerCase() === 'outra') && (
-                                <input type="text" name="customFuncaoInput" placeholder="Especifique Outra Função" value={addInlineFormData.customFuncaoInput || ''} onChange={handleAddInlineChange} className="p-1 border rounded-md text-sm w-full" />
-                            )}
-                            <textarea name="comment" value={addInlineFormData.comment || ''} onChange={handleAddInlineChange} placeholder="Comentário..." rows={1} className="p-1 border rounded-md text-sm w-full"></textarea>
-                            <div className="flex justify-end space-x-2 mt-1">
-                                <button onClick={handleSaveAddInline} className="p-1 text-green-600 hover:text-green-800"><SaveIcon /></button>
-                                <button onClick={handleCancelAddInline} className="p-1 text-red-600 hover:text-red-800"><CancelIcon /></button>
-                            </div>
+                            </form>
+                          ) : (
+                            <button
+                              onClick={() => handleAddInlineClick(dateString)}
+                              className="mt-2 text-blue-600 hover:text-blue-800 text-sm font-medium flex items-center"
+                            >
+                              <AddIcon /> Adicionar registro
+                            </button>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
-                      {addingInlineDate !== dateString && editingRecordId === null && (
-                        <button 
-                            onClick={() => handleAddInlineClick(dateString)} 
-                            className="text-indigo-600 hover:text-indigo-900 text-xs p-1 rounded hover:bg-indigo-50 flex items-center">
-                            <AddIcon /> Adicionar
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                </React.Fragment>
-              );
-            })}
-            {daysInMonth.length === 0 && (
-                <tr>
-                    <td colSpan={4} className="text-center py-10 text-gray-500">
-                        Nenhum dia encontrado para este mês/ano.
-                    </td>
-                </tr>
-            )}
-          </tbody>
-        </table>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+      
+      {/* Modal de Adição Manual */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">Adicionar Registro Manual</h2>
+                <button
+                  onClick={resetManualForm}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <form onSubmit={handleManualSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="manual-date" className="block text-sm font-medium text-gray-700 mb-1">Data</label>
+                    <input
+                      id="manual-date"
+                      type="date"
+                      value={manualDate}
+                      onChange={(e) => setManualDate(e.target.value)}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-client" className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+                    <select
+                      id="manual-client"
+                      value={manualClientId}
+                      onChange={(e) => setManualClientId(e.target.value)}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Selecione um cliente</option>
+                      {availableClientsForTimesheet.map(client => (
+                        <option key={client.id} value={client.id}>{client.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="manual-start-time" className="block text-sm font-medium text-gray-700 mb-1">Hora Início</label>
+                    <input
+                      id="manual-start-time"
+                      type="time"
+                      value={manualStartTime}
+                      onChange={(e) => setManualStartTime(e.target.value)}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-end-time" className="block text-sm font-medium text-gray-700 mb-1">Hora Fim</label>
+                    <input
+                      id="manual-end-time"
+                      type="time"
+                      value={manualEndTime}
+                      onChange={(e) => setManualEndTime(e.target.value)}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-funcao" className="block text-sm font-medium text-gray-700 mb-1">Função</label>
+                    <select
+                      id="manual-funcao"
+                      value={manualFuncaoId}
+                      onChange={handleManualFuncaoChange}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Selecione uma função</option>
+                      {availableFuncoesForTimesheet.map(funcao => (
+                        <option key={funcao.id} value={funcao.id}>{funcao.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Campo para função personalizada */}
+                {showManualCustomFuncaoInput && (
+                  <div>
+                    <label htmlFor="manual-custom-funcao" className="block text-sm font-medium text-gray-700 mb-1">Especifique a Função</label>
+                    <input
+                      id="manual-custom-funcao"
+                      type="text"
+                      value={manualCustomFuncaoInput}
+                      onChange={(e) => setManualCustomFuncaoInput(e.target.value)}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Ex: Desenvolvimento Frontend"
+                      required
+                    />
+                  </div>
+                )}
+                
+                {/* Campo de comentário (apenas se não for "Outra" função) */}
+                {!showManualCustomFuncaoInput && (
+                  <div>
+                    <label htmlFor="manual-comment" className="block text-sm font-medium text-gray-700 mb-1">Comentário (opcional)</label>
+                    <textarea
+                      id="manual-comment"
+                      value={manualComment}
+                      onChange={(e) => setManualComment(e.target.value)}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                    />
+                  </div>
+                )}
+                
+                <div className="flex justify-end space-x-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={resetManualForm}
+                    className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md transition duration-300"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition duration-300"
+                  >
+                    Adicionar
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Modal de Edição em Massa */}
+      {showBulkEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">Editar {selectedDays.length} Dia(s) Selecionado(s)</h2>
+                <button
+                  onClick={() => setShowBulkEditModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              <form onSubmit={handleBulkEditSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="bulk-start-time" className="block text-sm font-medium text-gray-700 mb-1">Nova Hora Início</label>
+                    <input
+                      id="bulk-start-time"
+                      type="time"
+                      name="startTime"
+                      value={bulkEditFormData.startTime || ''}
+                      onChange={handleBulkEditChange}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="bulk-end-time" className="block text-sm font-medium text-gray-700 mb-1">Nova Hora Fim</label>
+                    <input
+                      id="bulk-end-time"
+                      type="time"
+                      name="endTime"
+                      value={bulkEditFormData.endTime || ''}
+                      onChange={handleBulkEditChange}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="bulk-client" className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
+                    <select
+                      id="bulk-client"
+                      name="clientId"
+                      value={bulkEditFormData.clientId || ''}
+                      onChange={handleBulkEditChange}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Selecione um cliente</option>
+                      {availableClientsForTimesheet.map(client => (
+                        <option key={client.id} value={client.id}>{client.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="bulk-funcao" className="block text-sm font-medium text-gray-700 mb-1">Função</label>
+                    <select
+                      id="bulk-funcao"
+                      name="funcaoId"
+                      value={bulkEditFormData.funcaoId || ''}
+                      onChange={handleBulkEditChange}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Selecione uma função</option>
+                      {availableFuncoesForTimesheet.map(funcao => (
+                        <option key={funcao.id} value={funcao.id}>{funcao.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                {/* Campo para função personalizada */}
+                {bulkEditShowCustomFuncaoInput && (
+                  <div>
+                    <label htmlFor="bulk-custom-funcao" className="block text-sm font-medium text-gray-700 mb-1">Especifique a Função</label>
+                    <input
+                      id="bulk-custom-funcao"
+                      type="text"
+                      name="customFuncaoInput"
+                      value={bulkEditFormData.customFuncaoInput || ''}
+                      onChange={handleBulkEditChange}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Ex: Desenvolvimento Frontend"
+                    />
+                  </div>
+                )}
+                
+                {/* Campo de comentário (apenas se não for "Outra" função) */}
+                {!bulkEditShowCustomFuncaoInput && (
+                  <div>
+                    <label htmlFor="bulk-comment" className="block text-sm font-medium text-gray-700 mb-1">Comentário (opcional)</label>
+                    <textarea
+                      id="bulk-comment"
+                      name="comment"
+                      value={bulkEditFormData.comment || ''}
+                      onChange={handleBulkEditChange}
+                      className="border border-gray-300 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                    />
+                  </div>
+                )}
+                
+                <div className="flex justify-end space-x-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkEditModal(false)}
+                    className="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md transition duration-300"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition duration-300"
+                  >
+                    Aplicar a {selectedDays.length} Dia(s)
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
