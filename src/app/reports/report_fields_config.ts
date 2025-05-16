@@ -1,13 +1,13 @@
 
 // Interface para as opções de campos selecionáveis
-interface ReportFieldOption {
+export interface ReportFieldOption {
   id: string;
   label: string;
   defaultSelected: boolean;
 }
 
 // Definição dos campos disponíveis para cada tipo de relatório
-const dailyReportFields: ReportFieldOption[] = [
+export const dailyReportFields: ReportFieldOption[] = [
   { id: "employeeName", label: "Funcionário", defaultSelected: true },
   { id: "date", label: "Data", defaultSelected: true },
   { id: "entryTime", label: "Entrada", defaultSelected: true },
@@ -18,12 +18,11 @@ const dailyReportFields: ReportFieldOption[] = [
   { id: "comment", label: "Comentário", defaultSelected: false },
 ];
 
-const summaryReportFields: ReportFieldOption[] = [
+export const summaryReportFields: ReportFieldOption[] = [
   { id: "name", label: "Funcionário", defaultSelected: true },
   { id: "department", label: "Departamento", defaultSelected: true },
   { id: "workedDays", label: "Dias Trabalhados", defaultSelected: true },
   { id: "totalHoursFormatted", label: "Total Horas", defaultSelected: true },
   { id: "avgHoursFormatted", label: "Média Diária", defaultSelected: true },
 ];
-
 
