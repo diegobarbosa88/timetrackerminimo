@@ -1,5 +1,4 @@
-
-import { Employee, TimeRecord, Funcao, Client } from "./time-tracking-models";
+import { Employee, TimeRecord, Funcao, Client } from "../../lib/time-tracking-models";
 
 // Cache em memória para os dados do localStorage
 const dataCache: {
@@ -171,4 +170,3 @@ export const calculateReportStats = (filteredRecords: TimeRecord[], allEmployees
 };
 
 export type { Employee, TimeRecord, ReportStats };
-
